@@ -258,3 +258,37 @@ html {
   background: oklch(0.5 0.2 260 / 0.3);
   color: oklch(0.95 0 0);
 }
+
+/* ======================================================================= */
+/* Chat Widget                                                              */
+/* ======================================================================= */
+
+/* 气泡按钮：星河蓝渐变 + 脉冲发光 */
+.chat-fab {
+  background: linear-gradient(135deg, var(--color-star-blue), var(--color-star-blue-bright));
+  box-shadow:
+    0 4px 20px oklch(0.65 0.2 260 / 0.35),
+    0 0 40px oklch(0.65 0.2 260 / 0.15);
+  animation: chat-fab-pulse 3s ease-in-out infinite;
+}
+
+@keyframes chat-fab-pulse {
+  0%, 100% { box-shadow: 0 4px 20px oklch(0.65 0.2 260 / 0.35), 0 0 40px oklch(0.65 0.2 260 / 0.15); }
+  50% { box-shadow: 0 4px 25px oklch(0.65 0.2 260 / 0.5), 0 0 60px oklch(0.65 0.2 260 / 0.25); }
+}
+
+/* 流式打字光标 */
+.chat-typing-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--color-star-blue);
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  animation: chat-cursor-blink 0.8s step-end infinite;
+}
+
+@keyframes chat-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}

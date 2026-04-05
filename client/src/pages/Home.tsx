@@ -13,6 +13,7 @@
  * 8. 微信引导 (添加微信获取更多)
  * 9. 底部CTA + Footer
  */
+import ChatWidget from "@/components/ChatWidget";
 import ComingSoonSection from "@/components/ComingSoonSection";
 import FeaturesSection from "@/components/FeaturesSection";
 import FooterSection from "@/components/FooterSection";
@@ -37,6 +38,7 @@ export default function Home() {
         <WechatSection />
         <FooterSection />
       </main>
+      <ChatWidget />
     </div>
   );
 }

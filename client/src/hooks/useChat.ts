@@ -1,37 +1,28 @@
 /**
- * useChat — 聊天状态管理 hook
+ * useChat — 参数化聊天状态管理 hook（多智能体版）
  *
- * 封装 OpenClawClient，提供：
- * - 消息列表（含流式 delta 实时拼接）
- * - 发送/中断/拉取历史
- * - 连接状态
- * - 错误提示
+ * 用法：const { messages, sendMessage, ... } = useChat({ agentId: "lingmin" });
  *
- * 流式策略：
- * - agent 事件的 text 字段是累积全文，每次直接覆盖（不 append）
- * - chat 聚合事件的 final 用于收尾（停止 streaming 状态）
- *
- * 单例 client 在模块级创建，组件 unmount 不断连。
+ * 每个 agentId 的消息状态独立。
+ * 所有 agent 共用模块级单例 OpenClawClient（同一条 WebSocket）。
+ * 通过 sessionKey 订阅/取消订阅事件流。
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ChatMessage,
   type ConnectionState,
-  OpenClawClient,
   type StreamEvent,
+  openClawClient,
 } from "@/lib/openclaw";
-
-const client = new OpenClawClient();
+import { buildSessionKey } from "@/lib/visitor";
 
 /** 前端展示用的消息结构 */
 export interface DisplayMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  /** 是否正在流式生成中 */
   streaming?: boolean;
-  /** 是否被截断的占位消息 */
   omitted?: boolean;
 }
 
@@ -40,48 +31,46 @@ function isVisitorContextMessage(msg: ChatMessage): boolean {
   return msg.role === "assistant" && msg.content.startsWith("访客上下文:");
 }
 
-export function useChat() {
+interface UseChatOptions {
+  agentId: string;
+}
+
+export function useChat({ agentId }: UseChatOptions) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
-  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
+  const [connectionState, setConnectionState] = useState<ConnectionState>(
+    openClawClient.getState(),
+  );
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
   const activeRunId = useRef<string | null>(null);
   const initialized = useRef(false);
+  const sessionKey = buildSessionKey(agentId);
 
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
+    // 全局状态监听（只注册一次，多个 hook 实例会覆盖，但值一样）
+    openClawClient.onStateChange((s) => setConnectionState(s));
+    openClawClient.onError((e) => setError(e));
 
-    client.onStateChange((s) => setConnectionState(s));
-    client.onError((e) => setError(e));
-
-    client.onMessage((event: StreamEvent) => {
+    // 按 sessionKey 订阅流式事件
+    const unsubscribe = openClawClient.subscribe(sessionKey, (event: StreamEvent) => {
       switch (event.kind) {
         case "delta": {
-          // agent 事件：text 是累积全文，直接覆盖
           const fullText = event.text;
           if (!fullText && !event.delta) break;
 
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (last && last.streaming && last.id === event.runId) {
-              // 用累积全文覆盖（比 append delta 更可靠，不丢不重复）
               return [
                 ...prev.slice(0, -1),
                 { ...last, content: fullText || (last.content + event.delta) },
               ];
             }
-            // 新的 streaming 消息
             activeRunId.current = event.runId;
             return [
               ...prev,
-              {
-                id: event.runId,
-                role: "assistant",
-                content: fullText || event.delta,
-                streaming: true,
-              },
+              { id: event.runId, role: "assistant", content: fullText || event.delta, streaming: true },
             ];
           });
           break;
@@ -94,18 +83,13 @@ export function useChat() {
               const updated = [...prev];
               updated[idx] = {
                 ...updated[idx],
-                // final 带的 text 是完整文本，用于校准
                 content: event.text || updated[idx].content,
                 streaming: false,
               };
               return updated;
             }
-            // 没有对应的 delta（极端情况），直接插入
             if (event.text) {
-              return [
-                ...prev,
-                { id: event.runId, role: "assistant", content: event.text, streaming: false },
-              ];
+              return [...prev, { id: event.runId, role: "assistant", content: event.text, streaming: false }];
             }
             return prev;
           });
@@ -116,9 +100,7 @@ export function useChat() {
 
         case "aborted": {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === event.runId ? { ...m, streaming: false } : m,
-            ),
+            prev.map((m) => m.id === event.runId ? { ...m, streaming: false } : m),
           );
           activeRunId.current = null;
           setIsGenerating(false);
@@ -130,9 +112,7 @@ export function useChat() {
           setError(errText);
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === event.runId
-                ? { ...m, content: m.content || errText, streaming: false }
-                : m,
+              m.id === event.runId ? { ...m, content: m.content || errText, streaming: false } : m,
             ),
           );
           activeRunId.current = null;
@@ -141,13 +121,9 @@ export function useChat() {
         }
 
         case "lifecycle": {
-          // lifecycle start → 开始生成指示器已经由 sendMessage 设置
-          // lifecycle end → 如果 final 没到，也收尾
           if (event.phase === "end") {
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === event.runId && m.streaming ? { ...m, streaming: false } : m,
-              ),
+              prev.map((m) => m.id === event.runId && m.streaming ? { ...m, streaming: false } : m),
             );
             if (activeRunId.current === event.runId) {
               activeRunId.current = null;
@@ -158,28 +134,35 @@ export function useChat() {
         }
       }
     });
-  }, []);
+
+    return () => {
+      unsubscribe();
+    };
+  }, [sessionKey]);
 
   /** 连接并初始化（握手 + 注入上下文 + 拉历史） */
   const initialize = useCallback(async () => {
+    if (initialized.current) return;
+    initialized.current = true;
     try {
       setError(null);
-      await client.connect();
-      await client.injectVisitorContext();
-      const history = await client.getHistory();
+      await openClawClient.connect();
+      await openClawClient.injectVisitorContext(agentId);
+      const history = await openClawClient.getHistory(agentId);
       const display: DisplayMessage[] = history
         .filter((m) => !isVisitorContextMessage(m) && m.role !== "system")
         .map((m, i) => ({
-          id: `hist_${i}`,
+          id: `hist_${agentId}_${i}`,
           role: m.role as "user" | "assistant",
           content: m.content,
           omitted: m.content === "（此消息因过长已省略）",
         }));
       setMessages(display);
     } catch (e) {
+      initialized.current = false; // 允许重试
       setError(e instanceof Error ? e.message : "连接失败");
     }
-  }, []);
+  }, [agentId]);
 
   /** 发送消息 */
   const sendMessage = useCallback(async (text: string) => {
@@ -194,18 +177,18 @@ export function useChat() {
 
     try {
       setIsGenerating(true);
-      const runId = await client.sendChat(text.trim());
+      const runId = await openClawClient.sendChat(agentId, text.trim());
       activeRunId.current = runId;
     } catch (e) {
       setIsGenerating(false);
       setError(e instanceof Error ? e.message : "发送失败");
     }
-  }, []);
+  }, [agentId]);
 
   /** 中断生成 */
   const abortGeneration = useCallback(async () => {
-    try { await client.abort(); } catch { /* ignore */ }
-  }, []);
+    try { await openClawClient.abort(agentId); } catch { /* ignore */ }
+  }, [agentId]);
 
   const clearError = useCallback(() => setError(null), []);
 

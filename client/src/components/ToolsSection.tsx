@@ -1,11 +1,12 @@
 /**
  * ToolsSection — 两大AI智能体展示区域
  * Design: 暗夜星河赛博奢华风
- * 发光边框卡片，悬停时光效聚集，点击跳转到对应GPT链接
+ * 发光边框卡片，悬停时光效聚集，点击打开站内对话抽屉
  */
+import AgentChatPanel from "@/components/AgentChatPanel";
 import { motion, useInView } from "framer-motion";
-import { ArrowUpRight, ExternalLink, PenTool, Sparkles } from "lucide-react";
-import { useRef } from "react";
+import { ArrowUpRight, MessageCircle, PenTool, Sparkles } from "lucide-react";
+import { useRef, useState } from "react";
 
 const CREATE_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663458393951/SCfJdUEkzqdbvkfBNKpYBo/create-card-bg-VFBpjZt429gLkbdfVLF8U5.webp";
 const POLISH_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663458393951/SCfJdUEkzqdbvkfBNKpYBo/polish-card-bg-XVVAtG7wqcBnu3tmBEbCdz.webp";
@@ -21,6 +22,7 @@ const tools = [
     icon: PenTool,
     image: CREATE_BG,
     link: "https://chatgpt.com/g/g-69cd2d065ab88191aaa4ebea2bdc0d8e-ai-min-shang-xue-wen-an-chuang-zuo-guan",
+    agentId: "wenan-creator",
     gradient: "from-[oklch(0.5_0.2_260)] to-[oklch(0.6_0.18_240)]",
     glowColor: "oklch(0.5 0.2 260 / 0.15)",
     step: "第一步",
@@ -36,6 +38,7 @@ const tools = [
     icon: Sparkles,
     image: POLISH_BG,
     link: "https://chatgpt.com/g/g-69c4f07d148081919753a8f43267db79-ai-min-shang-xue-wen-an-run-se-da-shi",
+    agentId: "wenan-polisher",
     gradient: "from-[oklch(0.55_0.18_255)] to-[oklch(0.65_0.15_270)]",
     glowColor: "oklch(0.55 0.18 255 / 0.15)",
     step: "第二步",
@@ -43,7 +46,15 @@ const tools = [
   },
 ];
 
-function ToolCard({ tool, index }: { tool: typeof tools[0]; index: number }) {
+function ToolCard({
+  tool,
+  index,
+  onOpenChat,
+}: {
+  tool: typeof tools[0];
+  index: number;
+  onOpenChat: (agentId: string) => void;
+}) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-100px" });
 
@@ -120,18 +131,16 @@ function ToolCard({ tool, index }: { tool: typeof tools[0]; index: number }) {
             ))}
           </div>
 
-          {/* CTA */}
-          <a
-            href={tool.link}
-            target="_blank"
-            rel="noopener noreferrer"
+          {/* CTA — 站内对话 */}
+          <button
+            onClick={() => onOpenChat(tool.agentId)}
             className="relative inline-flex items-center justify-center gap-2 w-full px-6 py-3.5 text-sm font-semibold rounded-xl overflow-hidden group/btn transition-transform duration-300 active:scale-[0.98]"
           >
             <div className={`absolute inset-0 bg-gradient-to-r ${tool.gradient} opacity-90 transition-opacity duration-500 group-hover/btn:opacity-100`} />
             <div className="absolute inset-0 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-500" style={{ boxShadow: "inset 0 0 30px oklch(0.8 0.15 255 / 0.2)" }} />
-            <span className="relative text-white">进入{tool.title}</span>
-            <ExternalLink className="relative w-4 h-4 text-white/80 transition-transform duration-300 group-hover/btn:translate-x-0.5" />
-          </a>
+            <span className="relative text-white">开始对话</span>
+            <MessageCircle className="relative w-4 h-4 text-white/80 transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+          </button>
         </div>
       </div>
     </motion.div>
@@ -141,6 +150,16 @@ function ToolCard({ tool, index }: { tool: typeof tools[0]; index: number }) {
 export default function ToolsSection() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
+
+  // 单抽屉槽位：同时只打开一个 agent 的对话
+  const [activeAgent, setActiveAgent] = useState<{ agentId: string; agentName: string } | null>(null);
+
+  const handleOpenChat = (agentId: string) => {
+    const tool = tools.find((t) => t.agentId === agentId);
+    if (tool) {
+      setActiveAgent({ agentId: tool.agentId, agentName: tool.title });
+    }
+  };
 
   return (
     <section id="tools" className="relative py-24 sm:py-32">
@@ -174,7 +193,7 @@ export default function ToolsSection() {
         {/* Tool cards */}
         <div className="grid md:grid-cols-2 gap-6 lg:gap-8 max-w-5xl mx-auto">
           {tools.map((tool, i) => (
-            <ToolCard key={tool.id} tool={tool} index={i} />
+            <ToolCard key={tool.id} tool={tool} index={i} onOpenChat={handleOpenChat} />
           ))}
         </div>
 
@@ -190,6 +209,16 @@ export default function ToolsSection() {
           <div className="h-px w-12 bg-gradient-to-l from-transparent to-[oklch(0.4_0.1_260)]" />
         </motion.div>
       </div>
+
+      {/* Agent chat panel — 单抽屉槽位 */}
+      {activeAgent && (
+        <AgentChatPanel
+          agentId={activeAgent.agentId}
+          agentName={activeAgent.agentName}
+          open={true}
+          onOpenChange={(v) => { if (!v) setActiveAgent(null); }}
+        />
+      )}
     </section>
   );
 }

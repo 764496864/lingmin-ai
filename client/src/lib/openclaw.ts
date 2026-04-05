@@ -1,17 +1,12 @@
 /**
- * openclaw.ts — OpenClaw Gateway WebSocket 客户端
+ * openclaw.ts — OpenClaw Gateway WebSocket 客户端（多智能体版）
  *
  * OpenClaw 私有协议（非 JSON-RPC 2.0）：
  * - 请求帧：{ type: "req", id, method, params }
  * - 响应帧：{ type: "res", id, ok, payload?, error? }
  * - 事件帧：{ type: "event", event: "agent"|"chat"|"connect.challenge", payload }
  *
- * 握手流程：
- * 1. WS open → 等 connect.challenge 事件
- * 2. 收到 challenge → 发 connect 请求（带 client info + auth token）
- * 3. 收到 hello-ok 响应 → 握手完成，可发业务 RPC
- *
- * 不依赖任何第三方库，仅使用原生 WebSocket + crypto.randomUUID()。
+ * 单一 WebSocket 连接服务多个 agent，通过 sessionKey 路由事件到对应的订阅者。
  */
 
 import { buildSessionKey, getOrCreateVisitorId } from "./visitor";
@@ -20,52 +15,30 @@ import { buildSessionKey, getOrCreateVisitorId } from "./visitor";
 // Types
 // ===========================================================================
 
-/** 连接状态 */
 export type ConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
-/** 聊天消息（chat.history 返回 + UI 渲染用） */
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
   content: string;
   timestamp?: number;
 }
 
-/** agent 事件 payload（token 级粒度流式推送） */
-export interface AgentStreamEvent {
+/** hook 统一消费的流式事件 */
+export interface StreamEvent {
   runId: string;
   sessionKey: string;
-  seq: number;
-  stream: string; // "assistant" | "lifecycle" | ...
-  data: {
-    text?: string;   // 累积全文
-    delta?: string;  // 本次增量
-    phase?: string;  // lifecycle: "start" | "end"
-  };
-  ts: number;
-}
-
-/** chat 聚合事件 payload（每 ~10 token 一次） */
-export interface ChatAggEvent {
-  runId: string;
-  sessionKey: string;
-  seq: number;
-  state: "delta" | "final" | "aborted" | "error";
-  message?: {
-    role: string;
-    content: Array<{ type: string; text: string }>;
-    timestamp?: number;
-  };
+  kind: "delta" | "final" | "aborted" | "error" | "lifecycle";
+  text: string;
+  delta: string;
+  phase?: string;
   errorMessage?: string;
-  stopReason?: string;
 }
 
-/** chat.send 的 ack 响应 */
 export interface SendAck {
   runId: string;
   status: string;
 }
 
-/** chat.history 的响应结构 */
 export interface HistoryResult {
   sessionKey: string;
   messages: ChatMessage[];
@@ -100,23 +73,8 @@ interface OcEvent {
 type OcFrame = OcRequest | OcResponse | OcEvent;
 
 // ===========================================================================
-// 事件回调类型（暴露给 useChat hook）
+// 回调类型
 // ===========================================================================
-
-/** hook 统一消费的流式事件 */
-export interface StreamEvent {
-  runId: string;
-  sessionKey: string;
-  kind: "delta" | "final" | "aborted" | "error" | "lifecycle";
-  /** delta/final 时的文本 */
-  text: string;
-  /** delta 时的增量文本 */
-  delta: string;
-  /** lifecycle 的阶段 */
-  phase?: string;
-  /** error 时的错误消息 */
-  errorMessage?: string;
-}
 
 type MessageHandler = (event: StreamEvent) => void;
 type ErrorHandler = (error: string) => void;
@@ -138,11 +96,10 @@ const OMITTED_PLACEHOLDER = "[chat.history omitted: message too large]";
 
 const MOCK_MODE = import.meta.env.VITE_OPENCLAW_MOCK === "true";
 
-/** 固定的 client instanceId，整个页面生命周期不变 */
 const INSTANCE_ID = crypto.randomUUID();
 
 // ===========================================================================
-// OpenClawClient
+// OpenClawClient — 多智能体单连接
 // ===========================================================================
 
 export class OpenClawClient {
@@ -154,36 +111,31 @@ export class OpenClawClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionallyClosed = false;
 
-  // RPC pending Promise，按 id 索引
+  // RPC pending
   private pending = new Map<
     string,
     { resolve: (value: unknown) => void; reject: (err: Error) => void }
   >();
 
-  // 握手完成前的请求排队
+  // 握手
   private handshakeComplete = false;
   private pendingQueue: Array<() => void> = [];
-
-  // 事件订阅
-  private messageHandler: MessageHandler | null = null;
-  private errorHandler: ErrorHandler | null = null;
-  private stateHandler: StateHandler | null = null;
-
-  // connect() 的外部 Promise（跨 WS open → handshake complete）
   private connectResolve: (() => void) | null = null;
   private connectReject: ((err: Error) => void) | null = null;
+
+  // 多订阅者：sessionKey → handler[]
+  private subscribers = new Map<string, Set<MessageHandler>>();
+
+  // 全局事件（不分 sessionKey）
+  private errorHandler: ErrorHandler | null = null;
+  private stateHandler: StateHandler | null = null;
 
   // =========================================================================
   // 公共 API
   // =========================================================================
 
-  /**
-   * 打开 WebSocket 连接并完成 connect.challenge 握手。
-   * Promise 在 hello-ok 收到后才 resolve。
-   */
   connect(): Promise<void> {
     if (MOCK_MODE) {
-      console.log("[mock] connect — 模拟已连接");
       this.setState("connected");
       this.handshakeComplete = true;
       return Promise.resolve();
@@ -192,7 +144,6 @@ export class OpenClawClient {
       return Promise.resolve();
     }
     if (this.ws && this.ws.readyState <= WebSocket.OPEN && this.connectResolve) {
-      // 已经在连接/握手中，返回一个新 Promise 等握手完成
       return new Promise((resolve, reject) => {
         const orig = this.connectResolve;
         const origRej = this.connectReject;
@@ -204,7 +155,6 @@ export class OpenClawClient {
     return this.openSocket();
   }
 
-  /** 主动断开连接，停止自动重连。 */
   disconnect(): void {
     this.intentionallyClosed = true;
     this.clearReconnect();
@@ -222,26 +172,23 @@ export class OpenClawClient {
     this.setState("disconnected");
   }
 
-  /**
-   * 发送聊天消息。
-   * 返回 runId（从 ack 的 payload 中取）。
-   */
-  async sendChat(text: string): Promise<string> {
-    if (MOCK_MODE) return this.mockSendChat(text);
+  /** 发送聊天消息（指定 agentId）。返回 runId。 */
+  async sendChat(agentId: string, text: string): Promise<string> {
+    if (MOCK_MODE) return this.mockSendChat(agentId, text);
     const idempotencyKey = crypto.randomUUID();
     const payload = (await this.rpc("chat.send", {
-      sessionKey: buildSessionKey(),
+      sessionKey: buildSessionKey(agentId),
       message: text,
       idempotencyKey,
     })) as SendAck;
     return payload.runId;
   }
 
-  /** 拉取聊天历史。 */
-  async getHistory(limit = 50): Promise<ChatMessage[]> {
+  /** 拉取聊天历史（指定 agentId）。 */
+  async getHistory(agentId: string, limit = 50): Promise<ChatMessage[]> {
     if (MOCK_MODE) return [];
     const result = (await this.rpc("chat.history", {
-      sessionKey: buildSessionKey(),
+      sessionKey: buildSessionKey(agentId),
       limit,
     })) as HistoryResult;
 
@@ -254,10 +201,10 @@ export class OpenClawClient {
     }));
   }
 
-  /** 注入访客上下文（chat.inject，一次会话只注入一次）。 */
-  async injectVisitorContext(): Promise<void> {
+  /** 注入访客上下文（指定 agentId，每个 agent 一次会话只注入一次）。 */
+  async injectVisitorContext(agentId: string): Promise<void> {
     if (MOCK_MODE) return;
-    const sessionKey = buildSessionKey();
+    const sessionKey = buildSessionKey(agentId);
     const storageFlag = `lingmin_ctx_injected:${sessionKey}`;
     if (sessionStorage.getItem(storageFlag)) return;
 
@@ -266,7 +213,7 @@ export class OpenClawClient {
       "访客上下文:",
       `visitor_id: ${visitorId}`,
       "source: official_website",
-      "entry_agent: lingmin",
+      `entry_agent: ${agentId}`,
     ].join("\n");
 
     await this.rpc("chat.inject", {
@@ -278,14 +225,32 @@ export class OpenClawClient {
     sessionStorage.setItem(storageFlag, "1");
   }
 
-  /** 中断当前 AI 生成。 */
-  async abort(): Promise<void> {
+  /** 中断当前 AI 生成（指定 agentId）。 */
+  async abort(agentId: string): Promise<void> {
     await this.rpc("chat.abort", {
-      sessionKey: buildSessionKey(),
+      sessionKey: buildSessionKey(agentId),
     });
   }
 
-  onMessage(handler: MessageHandler): void { this.messageHandler = handler; }
+  // =========================================================================
+  // 多订阅者管理：按 sessionKey 路由
+  // =========================================================================
+
+  /** 订阅指定 sessionKey 的流式事件。返回取消订阅函数。 */
+  subscribe(sessionKey: string, handler: MessageHandler): () => void {
+    if (!this.subscribers.has(sessionKey)) {
+      this.subscribers.set(sessionKey, new Set());
+    }
+    this.subscribers.get(sessionKey)!.add(handler);
+    return () => {
+      const set = this.subscribers.get(sessionKey);
+      if (set) {
+        set.delete(handler);
+        if (set.size === 0) this.subscribers.delete(sessionKey);
+      }
+    };
+  }
+
   onError(handler: ErrorHandler): void { this.errorHandler = handler; }
   onStateChange(handler: StateHandler): void { this.stateHandler = handler; }
   getState(): ConnectionState { return this.state; }
@@ -294,21 +259,21 @@ export class OpenClawClient {
   // Mock 模式
   // =========================================================================
 
-  private mockSendChat(text: string): Promise<string> {
+  private mockSendChat(agentId: string, text: string): Promise<string> {
     const runId = crypto.randomUUID();
-    const sessionKey = buildSessionKey();
-    const chunks = ["你好", "！我是", "灵敏", "AI，", "文案创作", "助手。", "有什么", "可以帮你的？"];
+    const sessionKey = buildSessionKey(agentId);
+    const chunks = ["你好", "！我是", agentId, "，", "有什么", "可以帮你的？"];
     let accumulated = "";
     setTimeout(() => {
       let seq = 0;
       const interval = setInterval(() => {
         if (seq < chunks.length) {
           accumulated += chunks[seq];
-          this.messageHandler?.({ runId, sessionKey, kind: "delta", text: accumulated, delta: chunks[seq] });
+          this.dispatchToSubscribers(sessionKey, { runId, sessionKey, kind: "delta", text: accumulated, delta: chunks[seq] });
           seq++;
         } else {
           clearInterval(interval);
-          this.messageHandler?.({ runId, sessionKey, kind: "final", text: accumulated, delta: "" });
+          this.dispatchToSubscribers(sessionKey, { runId, sessionKey, kind: "final", text: accumulated, delta: "" });
         }
       }, 80);
     }, 500);
@@ -325,10 +290,14 @@ export class OpenClawClient {
     this.stateHandler?.(s);
   }
 
-  /**
-   * 创建 WebSocket，等待 open → challenge → connect → hello-ok。
-   * connect() 的 Promise 在 hello-ok 时 resolve。
-   */
+  /** 向指定 sessionKey 的所有订阅者分发事件 */
+  private dispatchToSubscribers(sessionKey: string, event: StreamEvent): void {
+    const handlers = this.subscribers.get(sessionKey);
+    if (handlers) {
+      handlers.forEach((h) => h(event));
+    }
+  }
+
   private openSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.setState("connecting");
@@ -344,7 +313,6 @@ export class OpenClawClient {
 
       ws.onopen = () => {
         this.reconnectAttempt = 0;
-        // 不在这里 resolve — 等 hello-ok 才算连接完成
       };
 
       ws.onclose = () => {
@@ -394,37 +362,24 @@ export class OpenClawClient {
       case "res":
         this.handleResponse(frame as OcResponse);
         break;
-      default:
-        // 忽略未知帧类型
-        break;
     }
   }
 
-  /** 处理事件帧 */
   private handleEvent(frame: OcEvent): void {
     switch (frame.event) {
       case "connect.challenge":
-        // 收到 challenge → 立刻发 connect 请求
         this.sendConnectRequest();
         break;
-
       case "agent":
         this.handleAgentEvent(frame.payload);
         break;
-
       case "chat":
         this.handleChatEvent(frame.payload);
-        break;
-
-      default:
-        // connect.ready、ping 等忽略
         break;
     }
   }
 
-  /** 处理响应帧 */
   private handleResponse(frame: OcResponse): void {
-    // hello-ok 响应（connect 请求的回复）
     if (frame.ok && frame.payload && typeof frame.payload === "object") {
       const p = frame.payload as Record<string, unknown>;
       if (p.type === "hello-ok") {
@@ -433,13 +388,10 @@ export class OpenClawClient {
         this.connectResolve?.();
         this.connectResolve = null;
         this.connectReject = null;
-        // 释放排队的业务请求
         this.flushQueue();
-        // 不 return — 也要 resolve pending 里的 connect RPC promise
       }
     }
 
-    // 匹配 pending RPC
     if (frame.id && this.pending.has(frame.id)) {
       const p = this.pending.get(frame.id)!;
       this.pending.delete(frame.id);
@@ -481,7 +433,6 @@ export class OpenClawClient {
       },
     };
 
-    // 把 connect 请求也注册到 pending，但 hello-ok 在 handleResponse 中特殊处理
     this.pending.set(connectFrame.id, {
       resolve: () => {},
       reject: (e) => { this.connectReject?.(e); },
@@ -491,36 +442,31 @@ export class OpenClawClient {
   }
 
   // =========================================================================
-  // 流式事件处理
+  // 流式事件 → 按 sessionKey 路由到订阅者
   // =========================================================================
 
-  /**
-   * 处理 event:"agent" — token 级粒度。
-   * stream="assistant" → delta 文本
-   * stream="lifecycle" → run 开始/结束
-   */
   private handleAgentEvent(payload: unknown): void {
-    if (!this.messageHandler || !payload) return;
+    if (!payload) return;
     const p = payload as Record<string, unknown>;
-    const mySessionKey = buildSessionKey();
-    if (p.sessionKey && p.sessionKey !== mySessionKey) return;
+    const sessionKey = p.sessionKey as string | undefined;
+    if (!sessionKey) return;
 
     const stream = p.stream as string;
     const data = (p.data ?? {}) as Record<string, unknown>;
     const runId = (p.runId as string) ?? "";
 
     if (stream === "assistant") {
-      this.messageHandler({
+      this.dispatchToSubscribers(sessionKey, {
         runId,
-        sessionKey: mySessionKey,
+        sessionKey,
         kind: "delta",
         text: (data.text as string) ?? "",
         delta: (data.delta as string) ?? "",
       });
     } else if (stream === "lifecycle") {
-      this.messageHandler({
+      this.dispatchToSubscribers(sessionKey, {
         runId,
-        sessionKey: mySessionKey,
+        sessionKey,
         kind: "lifecycle",
         text: "",
         delta: "",
@@ -529,21 +475,16 @@ export class OpenClawClient {
     }
   }
 
-  /**
-   * 处理 event:"chat" — 聚合事件。
-   * 用于 state="final"/"aborted"/"error" 的收尾。
-   */
   private handleChatEvent(payload: unknown): void {
-    if (!this.messageHandler || !payload) return;
+    if (!payload) return;
     const p = payload as Record<string, unknown>;
-    const mySessionKey = buildSessionKey();
-    if (p.sessionKey && p.sessionKey !== mySessionKey) return;
+    const sessionKey = p.sessionKey as string | undefined;
+    if (!sessionKey) return;
 
     const state = p.state as string;
     const runId = (p.runId as string) ?? "";
 
     if (state === "final") {
-      // 从 message.content[0].text 取完整文本
       let text = "";
       const msg = p.message as Record<string, unknown> | undefined;
       if (msg && Array.isArray(msg.content)) {
@@ -552,30 +493,21 @@ export class OpenClawClient {
           .map((c) => c.text)
           .join("");
       }
-      this.messageHandler({ runId, sessionKey: mySessionKey, kind: "final", text, delta: "" });
+      this.dispatchToSubscribers(sessionKey, { runId, sessionKey, kind: "final", text, delta: "" });
     } else if (state === "aborted") {
-      this.messageHandler({ runId, sessionKey: mySessionKey, kind: "aborted", text: "", delta: "" });
+      this.dispatchToSubscribers(sessionKey, { runId, sessionKey, kind: "aborted", text: "", delta: "" });
     } else if (state === "error") {
-      this.messageHandler({
-        runId,
-        sessionKey: mySessionKey,
-        kind: "error",
-        text: "",
-        delta: "",
+      this.dispatchToSubscribers(sessionKey, {
+        runId, sessionKey, kind: "error", text: "", delta: "",
         errorMessage: (p.errorMessage as string) ?? "生成出错",
       });
     }
-    // state="delta" 的 chat 事件忽略，优先用 agent 事件
   }
 
   // =========================================================================
-  // RPC 发送（带握手排队）
+  // RPC（带握手排队）
   // =========================================================================
 
-  /**
-   * 发送业务 RPC 请求。
-   * 如果握手未完成，请求会排队等 hello-ok 后自动发出。
-   */
   private rpc(method: string, params: Record<string, unknown>): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const doSend = () => {
@@ -592,7 +524,6 @@ export class OpenClawClient {
       if (this.handshakeComplete) {
         doSend();
       } else {
-        // 排队等握手完成
         this.pendingQueue.push(doSend);
       }
     });
@@ -615,14 +546,9 @@ export class OpenClawClient {
 
   private scheduleReconnect(): void {
     this.clearReconnect();
-    const delay = Math.min(
-      RECONNECT_BASE_MS * 2 ** this.reconnectAttempt,
-      RECONNECT_MAX_MS,
-    );
+    const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
     this.reconnectAttempt++;
-    this.reconnectTimer = setTimeout(() => {
-      this.openSocket().catch(() => {});
-    }, delay);
+    this.reconnectTimer = setTimeout(() => { this.openSocket().catch(() => {}); }, delay);
   }
 
   private clearReconnect(): void {
@@ -632,3 +558,6 @@ export class OpenClawClient {
     }
   }
 }
+
+/** 模块级单例 — 所有 agent 共用同一条 WebSocket 连接 */
+export const openClawClient = new OpenClawClient();

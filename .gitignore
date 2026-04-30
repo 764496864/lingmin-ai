@@ -7,6 +7,13 @@ dist/
 build/
 *.dist
 
+# Server data (SQLite DB + WAL files)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Environment variables
 .env
 .env.local

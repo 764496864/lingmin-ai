@@ -184,5 +184,12 @@ export default defineConfig({
       strict: true,
       deny: ["**/.*"],
     },
+    // 开发环境把 /api 转给本机 Express 服务（pnpm dev:server，端口 3000）
+    proxy: {
+      "/api": {
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:3000",
+        changeOrigin: true,
+      },
+    },
   },
 });

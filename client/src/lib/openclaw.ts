@@ -126,9 +126,9 @@ export class OpenClawClient {
   // 多订阅者：sessionKey → handler[]
   private subscribers = new Map<string, Set<MessageHandler>>();
 
-  // 全局事件（不分 sessionKey）
-  private errorHandler: ErrorHandler | null = null;
-  private stateHandler: StateHandler | null = null;
+  // 全局事件（不分 sessionKey）—— 多订阅者
+  private errorHandlers = new Set<ErrorHandler>();
+  private stateHandlers = new Set<StateHandler>();
 
   // =========================================================================
   // 公共 API
@@ -265,8 +265,17 @@ export class OpenClawClient {
     };
   }
 
-  onError(handler: ErrorHandler): void { this.errorHandler = handler; }
-  onStateChange(handler: StateHandler): void { this.stateHandler = handler; }
+  /** 订阅全局错误事件。返回 unsubscribe。 */
+  onError(handler: ErrorHandler): () => void {
+    this.errorHandlers.add(handler);
+    return () => { this.errorHandlers.delete(handler); };
+  }
+
+  /** 订阅连接状态变化。返回 unsubscribe。 */
+  onStateChange(handler: StateHandler): () => void {
+    this.stateHandlers.add(handler);
+    return () => { this.stateHandlers.delete(handler); };
+  }
   getState(): ConnectionState { return this.state; }
 
   // =========================================================================
@@ -301,7 +310,7 @@ export class OpenClawClient {
   private setState(s: ConnectionState): void {
     if (this.state === s) return;
     this.state = s;
-    this.stateHandler?.(s);
+    this.stateHandlers.forEach((h) => h(s));
   }
 
   /** 向指定 sessionKey 的所有订阅者分发事件 */
@@ -341,7 +350,7 @@ export class OpenClawClient {
 
       ws.onerror = () => {
         this.setState("error");
-        this.errorHandler?.("接待暂时不在线，请稍后再试");
+        this.errorHandlers.forEach((h) => h("接待暂时不在线，请稍后再试"));
       };
 
       ws.onmessage = (evt) => {
@@ -414,7 +423,7 @@ export class OpenClawClient {
       } else {
         const errMsg = frame.error?.message ?? "请求失败";
         p.reject(new Error(errMsg));
-        this.errorHandler?.(errMsg);
+        this.errorHandlers.forEach((h) => h(errMsg));
       }
     }
   }

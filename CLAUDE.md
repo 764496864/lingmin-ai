@@ -1,3 +1,5 @@
+> ⚠️ STATUS: COMPLETED — 以下所有功能已于 2026-05-01 全部实现。本文件保留作为架构参考。auth 已从 WebSocket RPC 改为 HTTP API（server/ 目录）。
+
 # CLAUDE.md — 灵敏AI 前端开发指令
 
 ## 项目概述

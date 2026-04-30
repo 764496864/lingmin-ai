@@ -21,11 +21,24 @@
 
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
+import rateLimit from "express-rate-limit";
 import * as auth from "./auth";
 import * as db from "./db";
 import * as lobster from "./lobster-rpc";
 
 const router = Router();
+
+// ===========================================================================
+// 鉴权类端点的限速：5 次/分钟/IP
+// ===========================================================================
+
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "请求太频繁，请 1 分钟后再试" },
+});
 
 // ===========================================================================
 // 工具：错误响应
@@ -39,7 +52,7 @@ function badRequest(res: import("express").Response, msg: string): void {
 // 鉴权相关
 // ===========================================================================
 
-router.post("/register", async (req, res) => {
+router.post("/register", authLimiter, async (req, res) => {
   const { username, password, securityQuestion, securityAnswer } = req.body ?? {};
   if (
     typeof username !== "string" ||
@@ -69,18 +82,29 @@ router.post("/register", async (req, res) => {
     securityAnswer.trim().toLowerCase(),
   );
 
-  db.createUser({
-    userId,
-    username: username.trim(),
-    passwordHash,
-    securityQuestion: securityQuestion.trim(),
-    securityAnswerHash,
-  });
+  // 注意：findByUsername 后到 createUser 之间有异步窗口（bcrypt.hash），
+  // 并发同名注册会撞 SQLite UNIQUE 约束。catch 后返回 409，不让异常上抛。
+  try {
+    db.createUser({
+      userId,
+      username: username.trim(),
+      passwordHash,
+      securityQuestion: securityQuestion.trim(),
+      securityAnswerHash,
+    });
+  } catch (e: unknown) {
+    const err = e as { code?: string; message?: string };
+    if (err.code === "SQLITE_CONSTRAINT_UNIQUE" || err.message?.includes("UNIQUE")) {
+      res.status(409).json({ error: "用户名已被占用" });
+      return;
+    }
+    throw e;
+  }
 
   res.json({ userId, username: username.trim() });
 });
 
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   const { username, password } = req.body ?? {};
   if (typeof username !== "string" || typeof password !== "string") {
     badRequest(res, "用户名和密码不能为空");
@@ -104,7 +128,7 @@ router.post("/logout", auth.requireAuth, (_req, res) => {
   res.json({ ok: true });
 });
 
-router.post("/recover", async (req, res) => {
+router.post("/recover", authLimiter, async (req, res) => {
   const { username, securityAnswer, newPassword } = req.body ?? {};
   if (
     typeof username !== "string" ||
@@ -119,17 +143,18 @@ router.post("/recover", async (req, res) => {
     return;
   }
 
+  // 不论用户是否存在 / 答案是否正确，都返回相同的 401 + 跑同样的 bcrypt 工作量
+  // 防止用户名枚举 + timing oracle
+  const GENERIC_ERROR = "用户名或安全答案错误";
+  const DUMMY_HASH = "$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWX";
+
   const row = db.findByUsername(username.trim());
-  if (!row) {
-    res.status(404).json({ error: "用户不存在" });
-    return;
-  }
   const ok = await auth.verifyPassword(
     securityAnswer.trim().toLowerCase(),
-    row.security_answer_hash,
+    row?.security_answer_hash ?? DUMMY_HASH,
   );
-  if (!ok) {
-    res.status(401).json({ error: "安全答案错误" });
+  if (!row || !ok) {
+    res.status(401).json({ error: GENERIC_ERROR });
     return;
   }
 
@@ -204,9 +229,14 @@ router.get("/user/stats", auth.requireAuth, async (req, res) => {
       tokensOut: usage.tokensOut ?? 0,
       byAgent: usage.byAgent ?? {},
     });
-  } catch (e) {
-    res.status(502).json({
-      error: `拉取使用统计失败：${e instanceof Error ? e.message : "unknown"}`,
+  } catch {
+    // 龙虾挂了 → 返回兜底数据 + degraded 标记，不让 Profile 页面整页空白
+    res.json({
+      conversationsTotal: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      byAgent: {},
+      degraded: true,
     });
   }
 });
@@ -216,18 +246,19 @@ router.get("/user/sessions", auth.requireAuth, async (req, res) => {
   try {
     const sessions = await lobster.fetchSessionsList(userId);
     res.json(sessions);
-  } catch (e) {
-    res.status(502).json({
-      error: `拉取对话列表失败：${e instanceof Error ? e.message : "unknown"}`,
-    });
+  } catch {
+    res.json({ sessions: [], degraded: true });
   }
 });
 
 router.get("/user/sessions/:sessionKey/history", auth.requireAuth, async (req, res) => {
   const { userId } = req as auth.AuthedRequest;
   const sessionKey = req.params.sessionKey;
-  // 安全检查：sessionKey 必须包含当前 userId（避免越权读其他人的对话）
-  if (!sessionKey.includes(`:${userId}`)) {
+  // 安全检查：解析 sessionKey 严格匹配 userId 段
+  // 格式：agent:<agentId>:<channel>:<peerKind>:<peerId>[:<conversationId>]
+  // 只比较第 5 段（peerId），避免子串误匹配 / 越权
+  const keyParts = sessionKey.split(":");
+  if (keyParts.length < 5 || keyParts[4] !== userId) {
     res.status(403).json({ error: "无权访问此对话" });
     return;
   }
@@ -302,7 +333,19 @@ router.get("/admin/users/:userId", auth.requireAuth, auth.requireAdmin, async (r
 });
 
 router.get("/admin/dashboard", auth.requireAuth, auth.requireAdmin, async (_req, res) => {
-  const today = await lobster.fetchGlobalUsageToday();
+  // 龙虾挂了 → 全局用量返回 0；本地 SQLite 统计仍有效
+  let today = {
+    conversationsToday: 0,
+    tokensInToday: 0,
+    tokensOutToday: 0,
+    byAgent: [] as Array<{ agentId: string; tokensIn: number; tokensOut: number; conversations: number }>,
+  };
+  let degraded = false;
+  try {
+    today = await lobster.fetchGlobalUsageToday();
+  } catch {
+    degraded = true;
+  }
   res.json({
     activeUsersToday: db.countActiveUsersToday(),
     newUsersToday: db.countNewUsersToday(),
@@ -310,6 +353,7 @@ router.get("/admin/dashboard", auth.requireAuth, auth.requireAdmin, async (_req,
     tokensInToday: today.tokensInToday,
     tokensOutToday: today.tokensOutToday,
     byAgent: today.byAgent,
+    ...(degraded ? { degraded: true } : {}),
   });
 });
 

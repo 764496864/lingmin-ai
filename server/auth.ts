@@ -16,6 +16,11 @@ const JWT_EXPIRES_IN: SignOptions["expiresIn"] =
   (process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"] | undefined) ?? "7d";
 
 if (JWT_SECRET === "dev-secret-change-me-in-prod") {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "[auth] FATAL: JWT_SECRET must be set in production. Set JWT_SECRET in .env.local",
+    );
+  }
   console.warn(
     "[auth] WARNING: using default JWT_SECRET. Set JWT_SECRET in .env.local for production.",
   );

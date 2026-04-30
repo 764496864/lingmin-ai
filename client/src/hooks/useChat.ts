@@ -94,10 +94,10 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
 
   // 订阅当前 sessionKey 的流式事件
   useEffect(() => {
-    openClawClient.onStateChange((s) => setConnectionState(s));
-    openClawClient.onError((e) => setError(e));
+    const unsubState = openClawClient.onStateChange((s) => setConnectionState(s));
+    const unsubError = openClawClient.onError((e) => setError(e));
 
-    const unsubscribe = openClawClient.subscribe(sessionKey, (event: StreamEvent) => {
+    const unsubStream = openClawClient.subscribe(sessionKey, (event: StreamEvent) => {
       switch (event.kind) {
         case "delta": {
           const fullText = event.text;
@@ -180,7 +180,9 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
     });
 
     return () => {
-      unsubscribe();
+      unsubStream();
+      unsubState();
+      unsubError();
     };
   }, [sessionKey]);
 

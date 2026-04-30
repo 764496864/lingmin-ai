@@ -50,6 +50,23 @@ async function startServer() {
   server.listen(port, () => {
     console.log(`[server] listening on http://localhost:${port}/`);
   });
+
+  // ---- 优雅关停：SIGTERM/SIGINT 时停止接受新连接，10s 后强制退出 ----
+  function gracefulShutdown(signal: string) {
+    console.log(`[server] ${signal} received, shutting down...`);
+    server.close(() => {
+      console.log("[server] HTTP server closed");
+      process.exit(0);
+    });
+    // 强制超时
+    setTimeout(() => {
+      console.error("[server] forced shutdown after timeout");
+      process.exit(1);
+    }, 10_000);
+  }
+
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 }
 
 startServer().catch((err) => {

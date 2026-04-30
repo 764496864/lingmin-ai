@@ -1,12 +1,14 @@
 /**
- * AgentChatPanel — 通用智能体对话面板
+ * AgentChatPanel — 通用智能体对话面板（多对话版）
  *
- * 所有入口（灵敏浮窗 / 文案创作官 / 文案润色官）共用此组件。
- * 桌面端用 Sheet，移动端用 Drawer。
+ * - 桌面端用 Sheet，移动端用 Drawer
+ * - 已登录用户顶部显示对话切换下拉 + "新建对话"按钮
+ * - 切换对话时，useChat 自动重新订阅 + 重新初始化历史
  */
 
 import ChatInput from "@/components/ChatInput";
 import ChatMessages from "@/components/ChatMessages";
+import { Button } from "@/components/ui/button";
 import {
   Drawer,
   DrawerContent,
@@ -14,16 +16,25 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { useAuth } from "@/contexts/AuthContext";
 import { useChat } from "@/hooks/useChat";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Bot, WifiOff, X } from "lucide-react";
-import { useCallback, useEffect, useRef } from "react";
+import { type ChatSessionInfo, listChatSessions } from "@/lib/auth";
+import { Bot, Plus, WifiOff, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface AgentChatPanelProps {
@@ -40,7 +51,13 @@ export default function AgentChatPanel({
   onOpenChange,
 }: AgentChatPanelProps) {
   const isMobile = useIsMobile();
+  const { user, sessionToken } = useAuth();
   const initRef = useRef(false);
+
+  // 当前选中的对话 ID（undefined = 默认对话）
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  // 当前 agent 的对话列表（仅已登录时有意义）
+  const [conversations, setConversations] = useState<ChatSessionInfo[]>([]);
 
   const {
     messages,
@@ -51,15 +68,42 @@ export default function AgentChatPanel({
     sendMessage,
     abortGeneration,
     clearError,
-  } = useChat({ agentId });
+  } = useChat({ agentId, conversationId });
 
-  // 首次打开时连接 + 初始化
+  // 打开 + sessionKey 变化时初始化（initialize 自身在 conversationId/agentId 变化时会换新身份）
   useEffect(() => {
-    if (open && !initRef.current) {
-      initRef.current = true;
+    if (open) {
       initialize();
     }
   }, [open, initialize]);
+
+  // 已登录时，打开后拉对话列表
+  useEffect(() => {
+    if (!open || !user || !sessionToken) {
+      return;
+    }
+    let cancelled = false;
+    listChatSessions(sessionToken)
+      .then((list) => {
+        if (cancelled) return;
+        setConversations(list.filter((c) => c.agentId === agentId));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // 对话列表 RPC 失败不影响主流程，静默
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, user, sessionToken, agentId]);
+
+  // 用户登出时退回默认对话
+  useEffect(() => {
+    if (!user) {
+      setConversationId(undefined);
+      setConversations([]);
+    }
+  }, [user]);
 
   const handleSend = useCallback(
     (text: string) => {
@@ -72,6 +116,16 @@ export default function AgentChatPanel({
     [connectionState, sendMessage],
   );
 
+  const handleNewConversation = useCallback(() => {
+    const newId = crypto.randomUUID();
+    setConversationId(newId);
+    toast.success("已创建新对话");
+  }, []);
+
+  const handleSwitchConversation = useCallback((value: string) => {
+    setConversationId(value === "__default__" ? undefined : value);
+  }, []);
+
   // 错误提示
   useEffect(() => {
     if (error) {
@@ -80,12 +134,58 @@ export default function AgentChatPanel({
     }
   }, [error, clearError]);
 
+  // 标记初始化已发生（用于断线 banner 显示时机）
+  useEffect(() => {
+    if (open) initRef.current = true;
+  }, [open]);
+
   const isDisconnected = connectionState === "disconnected" || connectionState === "error";
   const isConnecting = connectionState === "connecting";
+
+  // 对话切换栏（仅已登录时）
+  const conversationBar = user ? (
+    <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 bg-[oklch(0.1_0.02_260/0.6)]">
+      <Select
+        value={conversationId ?? "__default__"}
+        onValueChange={handleSwitchConversation}
+      >
+        <SelectTrigger
+          size="sm"
+          className="flex-1 bg-[oklch(0.13_0.022_260)] border-[oklch(0.22_0.03_260)] text-xs"
+        >
+          <SelectValue placeholder="选择对话" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__default__">默认对话</SelectItem>
+          {conversations.map((c) => {
+            const id = c.conversationId ?? c.sessionKey;
+            const label =
+              c.title ||
+              `对话 ${id.substring(0, 8)} · ${c.messageCount ?? 0} 条`;
+            return (
+              <SelectItem key={id} value={c.conversationId ?? id}>
+                {label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={handleNewConversation}
+        className="shrink-0 text-xs text-[oklch(0.75_0.18_255)] hover:bg-[oklch(0.55_0.18_255)]/10"
+      >
+        <Plus className="size-3.5" />
+        新对话
+      </Button>
+    </div>
+  ) : null;
 
   // 面板内容（Sheet 和 Drawer 共用）
   const chatPanel = (
     <div className="flex flex-col h-full">
+      {conversationBar}
       {isDisconnected && initRef.current && (
         <div className="flex items-center gap-2 px-4 py-2 bg-destructive/10 text-destructive text-xs">
           <WifiOff className="size-3" />

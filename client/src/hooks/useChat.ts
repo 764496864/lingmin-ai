@@ -1,14 +1,16 @@
 /**
- * useChat — 参数化聊天状态管理 hook（多智能体版）
+ * useChat — 参数化聊天状态管理 hook（多智能体 + 多对话 + 用户上下文注入）
  *
- * 用法：const { messages, sendMessage, ... } = useChat({ agentId: "lingmin" });
+ * 用法：const { messages, sendMessage, ... } = useChat({ agentId, conversationId? });
  *
- * 每个 agentId 的消息状态独立。
- * 所有 agent 共用模块级单例 OpenClawClient（同一条 WebSocket）。
- * 通过 sessionKey 订阅/取消订阅事件流。
+ * 行为：
+ * - 按 sessionKey 订阅事件流，每个 (agentId × conversationId × peerId) 独立
+ * - 登录状态变化自动重算 sessionKey（peerId 切换 visitorId ↔ userId）
+ * - 切换 sessionKey 时清空消息并重新初始化
+ * - 已登录时 sendMessage 在文本前注入 [user_context] 块（不影响 UI 显示原文）
+ * - 历史消息显示时自动剥离 [user_context] 块
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import {
   type ChatMessage,
   type ConnectionState,
@@ -16,6 +18,9 @@ import {
   openClawClient,
 } from "@/lib/openclaw";
 import { buildSessionKey } from "@/lib/visitor";
+import { useAuth } from "@/contexts/AuthContext";
+import type { AuthUser } from "@/lib/auth";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** 前端展示用的消息结构 */
 export interface DisplayMessage {
@@ -31,11 +36,38 @@ function isVisitorContextMessage(msg: ChatMessage): boolean {
   return msg.role === "assistant" && msg.content.startsWith("访客上下文:");
 }
 
-interface UseChatOptions {
-  agentId: string;
+/** 历史消息中可能保留 [user_context] 注入块，渲染前剥离 */
+function stripUserContext(content: string): string {
+  return content.replace(/\[user_context\][\s\S]*?\[\/user_context\]\s*/g, "");
 }
 
-export function useChat({ agentId }: UseChatOptions) {
+/** 构造发送给后端的消息（带 [user_context] 块，仅已登录时） */
+function buildOutgoingMessage(rawText: string, user: AuthUser | null): string {
+  if (!user) return rawText;
+
+  const lines: string[] = ["[user_context]"];
+  lines.push(`昵称: ${user.nickname || user.username}`);
+  if (user.profile?.role) lines.push(`职业: ${user.profile.role}`);
+  if (user.profile?.bio) lines.push(`简介: ${user.profile.bio}`);
+  if (user.globalMemories && user.globalMemories.length > 0) {
+    lines.push("记忆:");
+    user.globalMemories.forEach((m) => lines.push(`- ${m}`));
+  }
+  lines.push("[/user_context]");
+  lines.push("");
+  lines.push(rawText);
+  return lines.join("\n");
+}
+
+interface UseChatOptions {
+  agentId: string;
+  /** 命名对话 ID（不传则用默认对话） */
+  conversationId?: string;
+}
+
+export function useChat({ agentId, conversationId }: UseChatOptions) {
+  const { user } = useAuth();
+
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>(
     openClawClient.getState(),
@@ -45,14 +77,26 @@ export function useChat({ agentId }: UseChatOptions) {
 
   const activeRunId = useRef<string | null>(null);
   const initialized = useRef(false);
-  const sessionKey = buildSessionKey(agentId);
 
+  // sessionKey 依赖 user.userId（登录态）+ agentId + conversationId
+  // 登录变化时 buildSessionKey 内部读取的 peerId 会变，所以把 user?.userId 加入依赖
+  const sessionKey = useMemo(
+    () => buildSessionKey(agentId, conversationId),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agentId, conversationId, user?.userId],
+  );
+
+  // sessionKey 变化（agent/对话/登录态切换）→ 清空消息 + 标记需要重新初始化
   useEffect(() => {
-    // 全局状态监听（只注册一次，多个 hook 实例会覆盖，但值一样）
+    setMessages([]);
+    initialized.current = false;
+  }, [sessionKey]);
+
+  // 订阅当前 sessionKey 的流式事件
+  useEffect(() => {
     openClawClient.onStateChange((s) => setConnectionState(s));
     openClawClient.onError((e) => setError(e));
 
-    // 按 sessionKey 订阅流式事件
     const unsubscribe = openClawClient.subscribe(sessionKey, (event: StreamEvent) => {
       switch (event.kind) {
         case "delta": {
@@ -147,14 +191,15 @@ export function useChat({ agentId }: UseChatOptions) {
     try {
       setError(null);
       await openClawClient.connect();
-      await openClawClient.injectVisitorContext(agentId);
-      const history = await openClawClient.getHistory(agentId);
+      await openClawClient.injectVisitorContext(agentId, conversationId);
+      const history = await openClawClient.getHistory(agentId, 50, conversationId);
       const display: DisplayMessage[] = history
         .filter((m) => !isVisitorContextMessage(m) && m.role !== "system")
         .map((m, i) => ({
-          id: `hist_${agentId}_${i}`,
+          id: `hist_${agentId}_${conversationId ?? "default"}_${i}`,
           role: m.role as "user" | "assistant",
-          content: m.content,
+          // 用户消息可能含 [user_context]，剥离后再展示
+          content: m.role === "user" ? stripUserContext(m.content) : m.content,
           omitted: m.content === "（此消息因过长已省略）",
         }));
       setMessages(display);
@@ -162,33 +207,38 @@ export function useChat({ agentId }: UseChatOptions) {
       initialized.current = false; // 允许重试
       setError(e instanceof Error ? e.message : "连接失败");
     }
-  }, [agentId]);
+  }, [agentId, conversationId]);
 
-  /** 发送消息 */
+  /** 发送消息（已登录用户自动注入 [user_context] 块） */
   const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim()) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setError(null);
 
+    // UI 显示原文（不带 user_context）
     const userMsgId = crypto.randomUUID();
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: "user", content: text.trim() },
+      { id: userMsgId, role: "user", content: trimmed },
     ]);
+
+    // 发给后端的消息（已登录时前置 user_context 块）
+    const outgoing = buildOutgoingMessage(trimmed, user);
 
     try {
       setIsGenerating(true);
-      const runId = await openClawClient.sendChat(agentId, text.trim());
+      const runId = await openClawClient.sendChat(agentId, outgoing, conversationId);
       activeRunId.current = runId;
     } catch (e) {
       setIsGenerating(false);
       setError(e instanceof Error ? e.message : "发送失败");
     }
-  }, [agentId]);
+  }, [agentId, conversationId, user]);
 
   /** 中断生成 */
   const abortGeneration = useCallback(async () => {
-    try { await openClawClient.abort(agentId); } catch { /* ignore */ }
-  }, [agentId]);
+    try { await openClawClient.abort(agentId, conversationId); } catch { /* ignore */ }
+  }, [agentId, conversationId]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -201,5 +251,6 @@ export function useChat({ agentId }: UseChatOptions) {
     sendMessage,
     abortGeneration,
     clearError,
+    sessionKey,
   };
 }

@@ -172,23 +172,37 @@ export class OpenClawClient {
     this.setState("disconnected");
   }
 
-  /** 发送聊天消息（指定 agentId）。返回 runId。 */
-  async sendChat(agentId: string, text: string): Promise<string> {
-    if (MOCK_MODE) return this.mockSendChat(agentId, text);
+  /** 发送聊天消息（指定 agentId + 可选 conversationId）。返回 runId。 */
+  async sendChat(agentId: string, text: string, conversationId?: string): Promise<string> {
+    if (MOCK_MODE) return this.mockSendChat(agentId, text, conversationId);
     const idempotencyKey = crypto.randomUUID();
     const payload = (await this.rpc("chat.send", {
-      sessionKey: buildSessionKey(agentId),
+      sessionKey: buildSessionKey(agentId, conversationId),
       message: text,
       idempotencyKey,
     })) as SendAck;
     return payload.runId;
   }
 
-  /** 拉取聊天历史（指定 agentId）。 */
-  async getHistory(agentId: string, limit = 50): Promise<ChatMessage[]> {
+  /**
+   * 直接向指定 sessionKey 发送 chat 消息（不走 buildSessionKey 模板）。
+   * 用于 auth-rpc 这类非标准 sessionKey 格式（如 "agent:main:auth-rpc"）。
+   */
+  async sendChatToSession(sessionKey: string, text: string): Promise<string> {
+    const idempotencyKey = crypto.randomUUID();
+    const payload = (await this.rpc("chat.send", {
+      sessionKey,
+      message: text,
+      idempotencyKey,
+    })) as SendAck;
+    return payload.runId;
+  }
+
+  /** 拉取聊天历史（指定 agentId + 可选 conversationId）。 */
+  async getHistory(agentId: string, limit = 50, conversationId?: string): Promise<ChatMessage[]> {
     if (MOCK_MODE) return [];
     const result = (await this.rpc("chat.history", {
-      sessionKey: buildSessionKey(agentId),
+      sessionKey: buildSessionKey(agentId, conversationId),
       limit,
     })) as HistoryResult;
 
@@ -201,10 +215,10 @@ export class OpenClawClient {
     }));
   }
 
-  /** 注入访客上下文（指定 agentId，每个 agent 一次会话只注入一次）。 */
-  async injectVisitorContext(agentId: string): Promise<void> {
+  /** 注入访客上下文（指定 agentId，每个 sessionKey 只注入一次）。 */
+  async injectVisitorContext(agentId: string, conversationId?: string): Promise<void> {
     if (MOCK_MODE) return;
-    const sessionKey = buildSessionKey(agentId);
+    const sessionKey = buildSessionKey(agentId, conversationId);
     const storageFlag = `lingmin_ctx_injected:${sessionKey}`;
     if (sessionStorage.getItem(storageFlag)) return;
 
@@ -225,10 +239,10 @@ export class OpenClawClient {
     sessionStorage.setItem(storageFlag, "1");
   }
 
-  /** 中断当前 AI 生成（指定 agentId）。 */
-  async abort(agentId: string): Promise<void> {
+  /** 中断当前 AI 生成（指定 agentId + 可选 conversationId）。 */
+  async abort(agentId: string, conversationId?: string): Promise<void> {
     await this.rpc("chat.abort", {
-      sessionKey: buildSessionKey(agentId),
+      sessionKey: buildSessionKey(agentId, conversationId),
     });
   }
 
@@ -259,9 +273,9 @@ export class OpenClawClient {
   // Mock 模式
   // =========================================================================
 
-  private mockSendChat(agentId: string, text: string): Promise<string> {
+  private mockSendChat(agentId: string, text: string, conversationId?: string): Promise<string> {
     const runId = crypto.randomUUID();
-    const sessionKey = buildSessionKey(agentId);
+    const sessionKey = buildSessionKey(agentId, conversationId);
     const chunks = ["你好", "！我是", agentId, "，", "有什么", "可以帮你的？"];
     let accumulated = "";
     setTimeout(() => {

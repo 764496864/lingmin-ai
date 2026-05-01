@@ -88,11 +88,22 @@ export default function AgentChatPanel({
     listChatSessions(sessionToken)
       .then((list) => {
         if (cancelled) return;
-        setConversations(list.filter((c) => c.agentId === agentId));
+        if (import.meta.env.DEV) {
+          console.log(`[AgentChatPanel] sessions.list (agentId=${agentId}):`, list);
+        }
+        // 兼容服务端返回 { sessions: [...] } 包装的情况
+        const arr = Array.isArray(list)
+          ? list
+          : (list as { sessions?: unknown })?.sessions ?? [];
+        const safeArr = Array.isArray(arr) ? arr : [];
+        setConversations(safeArr.filter((c) => c.agentId === agentId));
       })
-      .catch(() => {
+      .catch((e) => {
         if (cancelled) return;
-        // 对话列表 RPC 失败不影响主流程，静默
+        if (import.meta.env.DEV) {
+          console.warn("[AgentChatPanel] sessions.list failed:", e);
+        }
+        // 对话列表 RPC 失败不影响主流程，静默；保持 conversations=[]
       });
     return () => {
       cancelled = true;
@@ -144,8 +155,8 @@ export default function AgentChatPanel({
   const isDisconnected = connectionState === "disconnected" || connectionState === "error";
   const isConnecting = connectionState === "connecting";
 
-  // 对话切换栏（仅已登录时）
-  const conversationBar = user ? (
+  // 对话切换栏（仅已登录且确实有历史对话时显示；新用户/空数据时隐藏）
+  const conversationBar = user && conversations.length > 0 ? (
     <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/30 bg-[oklch(0.1_0.02_260/0.6)]">
       <Select
         value={conversationId ?? "__default__"}

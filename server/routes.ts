@@ -223,13 +223,19 @@ router.get("/user/stats", auth.requireAuth, async (req, res) => {
   const { userId } = req as auth.AuthedRequest;
   try {
     const usage = await lobster.fetchSessionsUsage(userId);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[/user/stats] userId=${userId} usage=`, usage);
+    }
     res.json({
       conversationsTotal: usage.conversationsTotal ?? 0,
       tokensIn: usage.tokensIn ?? 0,
       tokensOut: usage.tokensOut ?? 0,
       byAgent: usage.byAgent ?? {},
     });
-  } catch {
+  } catch (e) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[/user/stats] lobster.fetchSessionsUsage failed for ${userId}:`, e);
+    }
     // 龙虾挂了 → 返回兜底数据 + degraded 标记，不让 Profile 页面整页空白
     res.json({
       conversationsTotal: 0,
@@ -245,8 +251,14 @@ router.get("/user/sessions", auth.requireAuth, async (req, res) => {
   const { userId } = req as auth.AuthedRequest;
   try {
     const sessions = await lobster.fetchSessionsList(userId);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[/user/sessions] userId=${userId} count=${sessions.length}`);
+    }
     res.json(sessions);
-  } catch {
+  } catch (e) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(`[/user/sessions] lobster.fetchSessionsList failed for ${userId}:`, e);
+    }
     res.json({ sessions: [], degraded: true });
   }
 });

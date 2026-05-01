@@ -38,8 +38,31 @@ function WelcomeState() {
   );
 }
 
+/** 防御：把任意类型的 content 安全转成字符串渲染 */
+function safeContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => {
+        if (typeof c === "string") return c;
+        if (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string") {
+          return (c as { text: string }).text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  if (typeof content === "object" && typeof (content as { text?: unknown }).text === "string") {
+    return (content as { text: string }).text;
+  }
+  return String(content);
+}
+
 function MessageBubble({ msg }: { msg: DisplayMessage }) {
   const isUser = msg.role === "user";
+  // 始终走 safeContent，避免 lobster 偶尔返非字符串 content 导致崩溃
+  const text = safeContent(msg.content);
 
   return (
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -70,7 +93,7 @@ function MessageBubble({ msg }: { msg: DisplayMessage }) {
       >
         {/* 用户消息：纯文本；AI 消息：Markdown 渲染 */}
         {isUser ? (
-          <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+          <span className="whitespace-pre-wrap break-words">{text}</span>
         ) : (
           <div
             className="prose prose-invert prose-sm max-w-none
@@ -83,7 +106,7 @@ function MessageBubble({ msg }: { msg: DisplayMessage }) {
               prose-pre:bg-[oklch(0.12_0.02_260)] prose-pre:rounded-lg prose-pre:my-2
               break-words"
           >
-            <ReactMarkdown>{msg.content}</ReactMarkdown>
+            <ReactMarkdown>{text}</ReactMarkdown>
           </div>
         )}
         {/* 流式打字光标 */}
@@ -116,6 +139,7 @@ function TypingDots() {
             className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-bounce"
             style={{ animationDelay: "300ms" }}
           />
+          <span className="text-xs text-muted-foreground/60 ml-1.5">正在思考...</span>
         </div>
       </div>
     </div>

@@ -198,8 +198,16 @@ export interface ChatSessionInfo {
   messageCount: number;
 }
 
-export function listChatSessions(sessionToken: string): Promise<ChatSessionInfo[]> {
-  return api("GET", "/user/sessions", null, sessionToken);
+export async function listChatSessions(sessionToken: string): Promise<ChatSessionInfo[]> {
+  // 服务端正常时返数组；龙虾挂了走降级路径返 { sessions: [], degraded: true }。
+  // 这里统一规范成数组，避免下游 .filter 崩溃。
+  const r = await api<unknown>("GET", "/user/sessions", null, sessionToken);
+  if (Array.isArray(r)) return r as ChatSessionInfo[];
+  if (r && typeof r === "object") {
+    const inner = (r as { sessions?: unknown }).sessions;
+    if (Array.isArray(inner)) return inner as ChatSessionInfo[];
+  }
+  return [];
 }
 
 export function fetchChatHistory(

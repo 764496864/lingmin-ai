@@ -31,14 +31,56 @@ export interface DisplayMessage {
   omitted?: boolean;
 }
 
-/** 判断一条 assistant 消息是否为隐藏的访客上下文注入 */
-function isVisitorContextMessage(msg: ChatMessage): boolean {
-  return msg.role === "assistant" && msg.content.startsWith("访客上下文:");
+/** 把任意类型的 content 安全转成字符串（防御 lobster 偶尔返回 object/array） */
+function toContentString(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  // 数组（content blocks 格式）：拼起 .text 字段
+  if (Array.isArray(content)) {
+    return content
+      .map((c) => {
+        if (typeof c === "string") return c;
+        if (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string") {
+          return (c as { text: string }).text;
+        }
+        return "";
+      })
+      .join("");
+  }
+  // 对象兜底：{ text: "..." }
+  if (typeof content === "object" && typeof (content as { text?: unknown }).text === "string") {
+    return (content as { text: string }).text;
+  }
+  return String(content);
 }
 
-/** 历史消息中可能保留 [user_context] 注入块，渲染前剥离 */
-function stripUserContext(content: string): string {
-  return content.replace(/\[user_context\][\s\S]*?\[\/user_context\]\s*/g, "");
+/** 判断一条 assistant 消息是否为隐藏的访客/用户上下文注入（整条消息都是上下文 → 不显示） */
+function isVisitorContextMessage(msg: ChatMessage): boolean {
+  if (msg.role !== "assistant") return false;
+  const c = toContentString(msg.content);
+  return (
+    c.startsWith("访客上下文:") ||
+    c.startsWith("[visitor_context]") ||
+    c.startsWith("[user_context]") ||
+    /^[\s\n]*\[(visitor|user)_context\]/.test(c)
+  );
+}
+
+/**
+ * 剥离消息中的 [user_context] / [visitor_context] 块，避免暴露给用户。
+ * 闭合标签缺失时也兜底裁掉残块。
+ */
+function stripUserContext(content: unknown): string {
+  const s = toContentString(content);
+  return s
+    .replace(/\[user_context\][\s\S]*?\[\/user_context\]\s*/g, "")
+    .replace(/\[visitor_context\][\s\S]*?\[\/visitor_context\]\s*/g, "")
+    // 没有闭合标签的残块兜底
+    .replace(/\[user_context\][\s\S]*$/g, "")
+    .replace(/\[visitor_context\][\s\S]*$/g, "")
+    // 残余 "访客上下文:" 行也清掉
+    .replace(/^访客上下文:[\s\S]*?(?:\n\n|$)/m, "")
+    .trimStart();
 }
 
 /**
@@ -231,13 +273,16 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
       }
       const display: DisplayMessage[] = history
         .filter((m) => !isVisitorContextMessage(m) && m.role !== "system")
+        // 对所有消息都跑 stripUserContext —— assistant 消息也可能被服务端
+        // 内联了 [user_context]/[visitor_context]（注入残留）。
+        // 剥离后内容为空的整条丢弃。
         .map((m, i) => ({
           id: `hist_${agentId}_${conversationId ?? "default"}_${i}`,
           role: m.role as "user" | "assistant",
-          // 用户消息可能含 [user_context]，剥离后再展示
-          content: m.role === "user" ? stripUserContext(m.content) : m.content,
-          omitted: m.content === "（此消息因过长已省略）",
-        }));
+          content: stripUserContext(m.content),
+          omitted: toContentString(m.content) === "（此消息因过长已省略）",
+        }))
+        .filter((m) => m.content.length > 0);
       setMessages(display);
     } catch (e) {
       initialized.current = false; // 允许重试

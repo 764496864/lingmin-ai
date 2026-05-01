@@ -41,6 +41,19 @@ function stripUserContext(content: string): string {
   return content.replace(/\[user_context\][\s\S]*?\[\/user_context\]\s*/g, "");
 }
 
+/**
+ * 判断错误是否是"会话尚不存在"——这种错误对新用户/新 sessionKey 是正常的，
+ * 不应该弹 toast 吓到用户。
+ */
+function isSessionNotFoundError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    (lower.includes("session") && lower.includes("not found")) ||
+    lower.includes("no session") ||
+    lower.includes("session_not_found")
+  );
+}
+
 /** 构造发送给后端的消息（带 [user_context] 块，仅已登录时） */
 function buildOutgoingMessage(rawText: string, user: AuthUser | null): string {
   if (!user) return rawText;
@@ -95,7 +108,11 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
   // 订阅当前 sessionKey 的流式事件
   useEffect(() => {
     const unsubState = openClawClient.onStateChange((s) => setConnectionState(s));
-    const unsubError = openClawClient.onError((e) => setError(e));
+    const unsubError = openClawClient.onError((e) => {
+      // "session not found" 是新用户/新会话的正常状态，不弹 toast
+      if (isSessionNotFoundError(e)) return;
+      setError(e);
+    });
 
     const unsubStream = openClawClient.subscribe(sessionKey, (event: StreamEvent) => {
       switch (event.kind) {
@@ -153,12 +170,15 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
 
         case "error": {
           const errText = event.errorMessage || "接待暂时遇到问题，请稍后再试";
-          setError(errText);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === event.runId ? { ...m, content: m.content || errText, streaming: false } : m,
-            ),
-          );
+          // 静默处理新会话错误
+          if (!isSessionNotFoundError(errText)) {
+            setError(errText);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === event.runId ? { ...m, content: m.content || errText, streaming: false } : m,
+              ),
+            );
+          }
           activeRunId.current = null;
           setIsGenerating(false);
           break;
@@ -193,8 +213,22 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
     try {
       setError(null);
       await openClawClient.connect();
-      await openClawClient.injectVisitorContext(agentId, conversationId);
-      const history = await openClawClient.getHistory(agentId, 50, conversationId);
+      // chat.inject / chat.history 对新 sessionKey 会返 "session not found"，
+      // 这是正常状态（用户还没历史），不是错误。各自单独 catch 静默。
+      try {
+        await openClawClient.injectVisitorContext(agentId, conversationId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (!isSessionNotFoundError(msg)) throw e;
+      }
+      let history: ChatMessage[] = [];
+      try {
+        history = await openClawClient.getHistory(agentId, 50, conversationId);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (!isSessionNotFoundError(msg)) throw e;
+        // 新会话没历史，当作空数组处理
+      }
       const display: DisplayMessage[] = history
         .filter((m) => !isVisitorContextMessage(m) && m.role !== "system")
         .map((m, i) => ({
@@ -207,7 +241,10 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
       setMessages(display);
     } catch (e) {
       initialized.current = false; // 允许重试
-      setError(e instanceof Error ? e.message : "连接失败");
+      const msg = e instanceof Error ? e.message : "连接失败";
+      if (!isSessionNotFoundError(msg)) {
+        setError(msg);
+      }
     }
   }, [agentId, conversationId]);
 

@@ -268,8 +268,8 @@ function UsersPanel({ sessionToken }: { sessionToken: string }) {
           {search ? "无匹配用户" : "暂无用户"}
         </div>
       ) : (
-        <div className="rounded-xl border border-[oklch(0.22_0.03_260)] overflow-hidden">
-          <Table>
+        <div className="rounded-xl border border-[oklch(0.22_0.03_260)] overflow-x-auto">
+          <Table className="min-w-[720px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent border-[oklch(0.22_0.03_260)]">
                 <TableHead className="w-8" />

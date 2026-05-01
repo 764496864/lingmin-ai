@@ -86,15 +86,15 @@ export default function HeroSection() {
             </span>
           </motion.div>
 
-          {/* Main title */}
-          <h1 className="font-display font-bold text-4xl sm:text-5xl md:text-6xl lg:text-7xl leading-[1.1] tracking-tight mb-6">
+          {/* Main title — text-3xl on the smallest screens (iPhone SE), scales up */}
+          <h1 className="font-display font-bold text-3xl sm:text-5xl md:text-6xl lg:text-7xl leading-[1.15] tracking-tight mb-6">
             <span className="block text-foreground">艾敏商学</span>
             <span className="block mt-1 text-gradient-blue">OPC爆款文案创作平台</span>
           </h1>
 
           {/* Typewriter subtitle */}
           <div className="h-10 flex items-center justify-center mb-6">
-            <p className="text-lg md:text-xl text-muted-foreground font-light">
+            <p className="text-base sm:text-lg md:text-xl text-muted-foreground font-light">
               {typewriterTexts[textIndex].substring(0, charIndex)}
               <span className="inline-block w-0.5 h-5 ml-0.5 bg-[oklch(0.6_0.2_260)] animate-pulse align-middle" />
             </p>
@@ -105,7 +105,7 @@ export default function HeroSection() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5, duration: 0.8 }}
-            className="max-w-2xl mx-auto text-base md:text-lg text-muted-foreground/80 leading-relaxed mb-10"
+            className="max-w-2xl mx-auto text-sm sm:text-base md:text-lg text-muted-foreground/80 leading-relaxed mb-8 sm:mb-10"
           >
             灵敏AI为您提供从文案创作到精细润色的完整工作流，
             <br className="hidden sm:block" />
@@ -117,12 +117,12 @@ export default function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.7, duration: 0.6 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 sm:mb-16"
           >
             <a
               href="#tools"
               onClick={(e) => handleScrollTo(e, "#tools")}
-              className="relative inline-flex items-center gap-2 px-8 py-4 text-base font-semibold rounded-xl overflow-hidden group"
+              className="relative inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 text-base font-semibold rounded-xl overflow-hidden group"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-[oklch(0.6_0.2_260)] to-[oklch(0.5_0.18_260)]" />
               <div className="absolute inset-0 bg-gradient-to-r from-[oklch(0.65_0.22_260)] to-[oklch(0.55_0.2_260)] opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
@@ -133,7 +133,7 @@ export default function HeroSection() {
             <a
               href="#workflow"
               onClick={(e) => handleScrollTo(e, "#workflow")}
-              className="inline-flex items-center gap-2 px-8 py-4 text-base font-medium rounded-xl border border-[oklch(0.3_0.03_260)] text-foreground/80 hover:border-[oklch(0.5_0.15_260)] hover:text-foreground transition-all duration-500 hover:bg-[oklch(0.15_0.02_260/0.5)]"
+              className="inline-flex items-center justify-center gap-2 w-full sm:w-auto px-8 py-4 text-base font-medium rounded-xl border border-[oklch(0.3_0.03_260)] text-foreground/80 hover:border-[oklch(0.5_0.15_260)] hover:text-foreground transition-all duration-500 hover:bg-[oklch(0.15_0.02_260/0.5)]"
             >
               了解工作流程
             </a>
@@ -144,19 +144,16 @@ export default function HeroSection() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9, duration: 0.6 }}
-            className="flex items-center justify-center gap-8 sm:gap-16"
+            className="flex items-center justify-center gap-6 sm:gap-16"
           >
-            {stats.map((stat, i) => (
+            {stats.map((stat) => (
               <div key={stat.label} className="text-center">
-                <div className="font-display font-bold text-xl sm:text-2xl text-foreground mb-1">
+                <div className="font-display font-bold text-lg sm:text-2xl text-foreground mb-1">
                   {stat.value}
                 </div>
-                <div className="text-xs sm:text-sm text-muted-foreground">
+                <div className="text-[11px] sm:text-sm text-muted-foreground">
                   {stat.label}
                 </div>
-                {i < stats.length - 1 && (
-                  <div className="hidden" />
-                )}
               </div>
             ))}
           </motion.div>

@@ -91,8 +91,8 @@ export default function WechatSection() {
             <div className="absolute top-0 left-0 w-20 h-20 border-t border-l border-[oklch(0.82_0.1_85/0.2)] rounded-tl-3xl" />
             <div className="absolute top-0 right-0 w-20 h-20 border-t border-r border-[oklch(0.82_0.1_85/0.2)] rounded-tr-3xl" />
 
-            <div className="p-8 sm:p-12 lg:p-16">
-              <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
+            <div className="p-6 sm:p-12 lg:p-16">
+              <div className="grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
                 {/* Left: Content */}
                 <div>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 mb-6 rounded-full border border-[oklch(0.82_0.1_85/0.25)] bg-[oklch(0.82_0.1_85/0.06)]">
@@ -162,7 +162,7 @@ export default function WechatSection() {
 
                       {/* WeChat ID display */}
                       <div className="relative mb-6">
-                        <div className="text-2xl font-display font-bold text-gradient-gold tracking-wider">
+                        <div className="text-xl sm:text-2xl font-display font-bold text-gradient-gold tracking-wider break-all">
                           {WECHAT_ID}
                         </div>
                       </div>

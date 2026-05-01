@@ -106,12 +106,15 @@ export default function Profile() {
         </div>
 
         <Tabs defaultValue="profile" className="w-full">
-          <TabsList className="bg-[oklch(0.13_0.022_260)] border border-[oklch(0.22_0.03_260)] mb-6">
-            <TabsTrigger value="profile">个人资料</TabsTrigger>
-            <TabsTrigger value="memory">我的记忆</TabsTrigger>
-            <TabsTrigger value="stats">使用统计</TabsTrigger>
-            <TabsTrigger value="history">对话历史</TabsTrigger>
-          </TabsList>
+          {/* 移动端横向滚动避免 4 个 tab 挤压 */}
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-6">
+            <TabsList className="bg-[oklch(0.13_0.022_260)] border border-[oklch(0.22_0.03_260)] inline-flex w-auto sm:w-full">
+              <TabsTrigger value="profile">个人资料</TabsTrigger>
+              <TabsTrigger value="memory">我的记忆</TabsTrigger>
+              <TabsTrigger value="stats">使用统计</TabsTrigger>
+              <TabsTrigger value="history">对话历史</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="profile">
             <ProfileTab />

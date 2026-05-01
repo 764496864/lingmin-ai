@@ -264,21 +264,22 @@ export default function AgentChatPanel({
       {/* 移动端 Drawer */}
       {isMobile && (
         <Drawer open={open} onOpenChange={onOpenChange}>
-          <DrawerContent className="max-h-[85vh] bg-[var(--color-void)]">
-            <DrawerHeader className="pb-2 border-b border-border/30">
+          <DrawerContent className="max-h-[90vh] bg-[var(--color-void)]">
+            <DrawerHeader className="pb-2 border-b border-border/30 shrink-0">
               <DrawerTitle className="sr-only">{agentName} 聊天</DrawerTitle>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2">
                 {panelHeader}
                 <button
                   onClick={() => onOpenChange(false)}
-                  className="text-muted-foreground hover:text-foreground p-1"
+                  className="text-muted-foreground hover:text-foreground p-1 shrink-0"
                   aria-label="关闭"
                 >
                   <X className="size-4" />
                 </button>
               </div>
             </DrawerHeader>
-            <div className="flex-1 overflow-hidden" style={{ height: "60vh" }}>
+            {/* 输入框 + 消息列表占满剩余高度，Drawer 自身有 max-h-[90vh] */}
+            <div className="flex-1 overflow-hidden min-h-0" style={{ height: "calc(90vh - 4rem)" }}>
               {chatPanel}
             </div>
           </DrawerContent>

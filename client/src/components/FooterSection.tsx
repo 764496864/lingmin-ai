@@ -2,14 +2,21 @@
  * FooterSection — 底部CTA + 页脚
  * Design: 暗夜星河赛博奢华风
  * 最终行动号召区域 + 品牌信息页脚
+ *
+ * 全部 ChatGPT 外链已替换为站内 #tools 锚点（让用户在 ToolsSection 点"开始对话"）。
  */
 import { motion, useInView } from "framer-motion";
-import { ExternalLink, Sparkles, Zap } from "lucide-react";
+import { Sparkles, Zap } from "lucide-react";
 import { useRef } from "react";
 
 export default function FooterSection() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-80px" });
+
+  const scrollToTools = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.querySelector("#tools")?.scrollIntoView({ behavior: "smooth" });
+  };
 
   return (
     <>
@@ -52,9 +59,8 @@ export default function FooterSection() {
 
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <a
-                href="https://chatgpt.com/g/g-69cd2d065ab88191aaa4ebea2bdc0d8e-ai-min-shang-xue-wen-an-chuang-zuo-guan"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#tools"
+                onClick={scrollToTools}
                 className="relative inline-flex items-center gap-2 px-8 py-4 text-base font-semibold rounded-xl overflow-hidden group w-full sm:w-auto justify-center transition-transform duration-300 active:scale-[0.98]"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-[oklch(0.6_0.2_260)] to-[oklch(0.5_0.18_260)]" />
@@ -64,13 +70,11 @@ export default function FooterSection() {
                 <Zap className="relative w-4 h-4 text-white" />
               </a>
               <a
-                href="https://chatgpt.com/g/g-69c4f07d148081919753a8f43267db79-ai-min-shang-xue-wen-an-run-se-da-shi"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#tools"
+                onClick={scrollToTools}
                 className="inline-flex items-center gap-2 px-8 py-4 text-base font-medium rounded-xl border border-[oklch(0.28_0.03_260)] text-foreground/80 hover:border-[oklch(0.45_0.12_260)] hover:text-foreground transition-all duration-500 hover:bg-[oklch(0.15_0.02_260/0.5)] w-full sm:w-auto justify-center"
               >
                 <span>进入润色官</span>
-                <ExternalLink className="w-4 h-4" />
               </a>
             </div>
           </motion.div>
@@ -103,18 +107,16 @@ export default function FooterSection() {
             {/* Links */}
             <div className="flex items-center gap-8">
               <a
-                href="https://chatgpt.com/g/g-69cd2d065ab88191aaa4ebea2bdc0d8e-ai-min-shang-xue-wen-an-chuang-zuo-guan"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#tools"
+                onClick={scrollToTools}
                 className="text-sm text-muted-foreground/70 hover:text-foreground transition-colors duration-300"
               >
                 文案创作官
               </a>
               <div className="w-px h-4 bg-[oklch(0.2_0.02_260)]" />
               <a
-                href="https://chatgpt.com/g/g-69c4f07d148081919753a8f43267db79-ai-min-shang-xue-wen-an-run-se-da-shi"
-                target="_blank"
-                rel="noopener noreferrer"
+                href="#tools"
+                onClick={scrollToTools}
                 className="text-sm text-muted-foreground/70 hover:text-foreground transition-colors duration-300"
               >
                 文案润色官

@@ -21,7 +21,7 @@ import { WebSocket } from "ws";
 const WS_URL =
   process.env.OPENCLAW_WS_URL ??
   process.env.VITE_OPENCLAW_WS_URL ??
-  "ws://127.0.0.1:18889";
+  "ws://127.0.0.1:18789";
 
 const TOKEN =
   process.env.OPENCLAW_TOKEN ?? process.env.VITE_OPENCLAW_TOKEN ?? "";

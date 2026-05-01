@@ -2,14 +2,27 @@
  * WorkflowSection — 工作流程引导区域
  * Design: 暗夜星河赛博奢华风
  * 三步流程展示，配合流光连接线和滚动触发动画
+ *
+ * 第一/二步的"前往使用"按钮触发站内 AgentChatPanel（同 ToolsSection 模式）。
  */
+import AgentChatPanel from "@/components/AgentChatPanel";
 import { motion, useInView } from "framer-motion";
 import { ArrowRight, CheckCircle2, Copy, FileText, PenTool, Send, Sparkles } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 const WORKFLOW_BG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663458393951/SCfJdUEkzqdbvkfBNKpYBo/workflow-bg-8G3wwb3PybLB9NdeaFSgo9.webp";
 
-const steps = [
+interface Step {
+  number: string;
+  title: string;
+  description: string;
+  icon: typeof PenTool;
+  details: string[];
+  color: string;
+  agentId: string | null;
+}
+
+const steps: Step[] = [
   {
     number: "01",
     title: "创作文案",
@@ -17,7 +30,7 @@ const steps = [
     icon: PenTool,
     details: ["输入选题关键词", "AI分析主拉力", "构建四段骨架", "生成完整文案"],
     color: "oklch(0.6 0.2 260)",
-    link: "https://chatgpt.com/g/g-69cd2d065ab88191aaa4ebea2bdc0d8e-ai-min-shang-xue-wen-an-chuang-zuo-guan",
+    agentId: "copywriter",
   },
   {
     number: "02",
@@ -26,7 +39,7 @@ const steps = [
     icon: Sparkles,
     details: ["复制创作文案", "粘贴至润色官", "AI精准润色", "优化表达力"],
     color: "oklch(0.65 0.18 255)",
-    link: "https://chatgpt.com/g/g-69c4f07d148081919753a8f43267db79-ai-min-shang-xue-wen-an-run-se-da-shi",
+    agentId: "content-doctor",
   },
   {
     number: "03",
@@ -35,11 +48,19 @@ const steps = [
     icon: Send,
     details: ["获取润色成品", "检查最终效果", "选择发布平台", "一键发布"],
     color: "oklch(0.82 0.1 85)",
-    link: null,
+    agentId: null,
   },
 ];
 
-function StepCard({ step, index }: { step: typeof steps[0]; index: number }) {
+function StepCard({
+  step,
+  index,
+  onOpenChat,
+}: {
+  step: Step;
+  index: number;
+  onOpenChat: (agentId: string, agentName: string) => void;
+}) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-80px" });
 
@@ -140,18 +161,17 @@ function StepCard({ step, index }: { step: typeof steps[0]; index: number }) {
           ))}
         </div>
 
-        {/* Optional link */}
-        {step.link && (
-          <a
-            href={step.link}
-            target="_blank"
-            rel="noopener noreferrer"
+        {/* Open chat for agent steps */}
+        {step.agentId && (
+          <button
+            type="button"
+            onClick={() => onOpenChat(step.agentId!, step.title)}
             className="inline-flex items-center gap-1.5 mt-5 text-xs font-medium transition-colors duration-300 hover:opacity-80"
             style={{ color: step.color }}
           >
             <span>前往使用</span>
             <ArrowRight className="w-3 h-3" />
-          </a>
+          </button>
         )}
       </div>
     </motion.div>
@@ -161,6 +181,13 @@ function StepCard({ step, index }: { step: typeof steps[0]; index: number }) {
 export default function WorkflowSection() {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-50px" });
+
+  // 单抽屉槽位：同时只打开一个 agent 对话（与 ToolsSection 共享语义）
+  const [activeAgent, setActiveAgent] = useState<{ agentId: string; agentName: string } | null>(null);
+
+  const handleOpenChat = (agentId: string, agentName: string) => {
+    setActiveAgent({ agentId, agentName });
+  };
 
   return (
     <section id="workflow" className="relative py-24 sm:py-32 overflow-hidden">
@@ -196,7 +223,7 @@ export default function WorkflowSection() {
         {/* Steps grid */}
         <div className="grid lg:grid-cols-3 gap-6 lg:gap-8 max-w-5xl mx-auto">
           {steps.map((step, i) => (
-            <StepCard key={step.number} step={step} index={i} />
+            <StepCard key={step.number} step={step} index={i} onOpenChat={handleOpenChat} />
           ))}
         </div>
 
@@ -216,6 +243,16 @@ export default function WorkflowSection() {
           </div>
         </motion.div>
       </div>
+
+      {/* Agent chat panel — 单抽屉槽位 */}
+      {activeAgent && (
+        <AgentChatPanel
+          agentId={activeAgent.agentId}
+          agentName={activeAgent.agentName}
+          open={true}
+          onOpenChange={(v) => { if (!v) setActiveAgent(null); }}
+        />
+      )}
     </section>
   );
 }

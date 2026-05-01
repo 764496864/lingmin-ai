@@ -85,7 +85,7 @@ type StateHandler = (state: ConnectionState) => void;
 // ===========================================================================
 
 const WS_BASE_URL: string =
-  import.meta.env.VITE_OPENCLAW_WS_URL ?? "ws://127.0.0.1:18889";
+  import.meta.env.VITE_OPENCLAW_WS_URL ?? "ws://127.0.0.1:18789";
 
 const WS_TOKEN: string = import.meta.env.VITE_OPENCLAW_TOKEN ?? "";
 

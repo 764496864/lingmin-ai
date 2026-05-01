@@ -1,19 +1,21 @@
 /**
  * ChatMessages — 聊天消息列表
  *
- * - 用户消息右对齐蓝色气泡，AI 消息左对齐深色气泡
+ * - 用户消息右对齐蓝色气泡（纯文本，保留换行）
+ * - AI 消息左对齐深色气泡（react-markdown 渲染粗体/列表/标题/代码块）
  * - 流式消息显示打字光标动画
+ * - 等待 AI 首个 delta 时显示三个跳动的点
  * - 自动滚动到底部
- * - 被截断���消息显示为灰色占位
+ * - 被截断的消息显示为灰色占位
  * - 空态显示欢迎语
  */
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Spinner } from "@/components/ui/spinner";
 import type { DisplayMessage } from "@/hooks/useChat";
 import { Bot, User } from "lucide-react";
 import { useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 
 interface ChatMessagesProps {
   messages: DisplayMessage[];
@@ -66,12 +68,55 @@ function MessageBubble({ msg }: { msg: DisplayMessage }) {
           ${msg.omitted ? "opacity-50 italic" : ""}
         `}
       >
-        {/* 消息内容，保留换行 */}
-        <span className="whitespace-pre-wrap break-words">{msg.content}</span>
-        {/* 流式打字光标 */}
-        {msg.streaming && (
-          <span className="chat-typing-cursor" />
+        {/* 用户消息：纯文本；AI 消息：Markdown 渲染 */}
+        {isUser ? (
+          <span className="whitespace-pre-wrap break-words">{msg.content}</span>
+        ) : (
+          <div
+            className="prose prose-invert prose-sm max-w-none
+              prose-p:my-1 prose-p:leading-relaxed
+              prose-headings:my-2 prose-headings:font-semibold
+              prose-ul:my-1 prose-ol:my-1
+              prose-li:my-0.5
+              prose-strong:text-foreground
+              prose-code:text-[oklch(0.75_0.18_255)] prose-code:bg-[oklch(0.15_0.02_260)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+              prose-pre:bg-[oklch(0.12_0.02_260)] prose-pre:rounded-lg prose-pre:my-2
+              break-words"
+          >
+            <ReactMarkdown>{msg.content}</ReactMarkdown>
+          </div>
         )}
+        {/* 流式打字光标 */}
+        {msg.streaming && <span className="chat-typing-cursor" />}
+      </div>
+    </div>
+  );
+}
+
+/** 等待 AI 首个 delta 时的"三点跳动" */
+function TypingDots() {
+  return (
+    <div className="flex gap-2.5">
+      <Avatar className="size-7 shrink-0 mt-0.5">
+        <AvatarFallback className="bg-[var(--color-gold)]/15 text-[var(--color-gold)]">
+          <Bot className="size-3.5" />
+        </AvatarFallback>
+      </Avatar>
+      <div className="bg-[var(--color-card)] border border-border/30 rounded-2xl rounded-bl-md px-4 py-3">
+        <div className="flex gap-1.5 items-center">
+          <span
+            className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-bounce"
+            style={{ animationDelay: "0ms" }}
+          />
+          <span
+            className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-bounce"
+            style={{ animationDelay: "150ms" }}
+          />
+          <span
+            className="w-2 h-2 rounded-full bg-muted-foreground/60 animate-bounce"
+            style={{ animationDelay: "300ms" }}
+          />
+        </div>
       </div>
     </div>
   );
@@ -95,18 +140,9 @@ export default function ChatMessages({ messages, isGenerating }: ChatMessagesPro
             {messages.map((msg) => (
               <MessageBubble key={msg.id} msg={msg} />
             ))}
-            {/* 等待 AI 首个 delta 时的加载指示器 */}
+            {/* 等待 AI 首个 delta 时的加载指示器（三点跳动） */}
             {isGenerating && messages[messages.length - 1]?.role === "user" && (
-              <div className="flex gap-2.5">
-                <Avatar className="size-7 shrink-0 mt-0.5">
-                  <AvatarFallback className="bg-[var(--color-gold)]/15 text-[var(--color-gold)]">
-                    <Bot className="size-3.5" />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="bg-[var(--color-card)] border border-border/30 rounded-2xl rounded-bl-md px-4 py-3">
-                  <Spinner className="size-4 text-muted-foreground" />
-                </div>
-              </div>
+              <TypingDots />
             )}
           </>
         )}

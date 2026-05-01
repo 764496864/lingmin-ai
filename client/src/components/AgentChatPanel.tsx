@@ -33,7 +33,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useChat } from "@/hooks/useChat";
 import { useIsMobile } from "@/hooks/useMobile";
 import { type ChatSessionInfo, listChatSessions } from "@/lib/auth";
-import { Bot, ExternalLink, Maximize2, Minimize2, Plus, WifiOff, X } from "lucide-react";
+import { Bot, Maximize2, MessageSquarePlus, Minimize2, Plus, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -234,18 +234,18 @@ export default function AgentChatPanel({
         </div>
       </div>
 
-      {/* 桌面端：新窗口打开 + 全屏切换 */}
-      {!isMobile && (
-        <div className="flex items-center gap-1 mr-8">
-          <button
-            type="button"
-            onClick={() => window.open(`/chat/${agentId}`, "_blank", "noopener,noreferrer")}
-            className="p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="新窗口打开"
-            title="新窗口打开"
-          >
-            <ExternalLink className="size-4" />
-          </button>
+      {/* 头部按钮：新建对话（移动端 + 桌面端都显示）+ 全屏切换（仅桌面端） */}
+      <div className={`flex items-center gap-1 ${isMobile ? "" : "mr-8"}`}>
+        <button
+          type="button"
+          onClick={handleNewConversation}
+          className="p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
+          aria-label="新建对话"
+          title="新建对话"
+        >
+          <MessageSquarePlus className="size-4" />
+        </button>
+        {!isMobile && (
           <button
             type="button"
             onClick={() => setIsFullscreen((v) => !v)}
@@ -255,8 +255,8 @@ export default function AgentChatPanel({
           >
             {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 

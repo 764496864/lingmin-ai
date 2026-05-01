@@ -59,10 +59,41 @@ function safeContent(content: unknown): string {
   return String(content);
 }
 
+/** 渲染前最后一道防线：含访客/用户上下文标记或系统调试横幅的消息 → 整条不渲染 */
+function isHiddenSystemContent(text: string): boolean {
+  if (!text) return false;
+  if (
+    text.includes("[visitor_context]") ||
+    text.includes("[/visitor_context]") ||
+    text.includes("[user_context]") ||
+    text.includes("[/user_context]") ||
+    text.includes("visitor_id:") ||
+    text.includes("entry_agent:") ||
+    text.startsWith("访客上下文:")
+  ) {
+    return true;
+  }
+  // OpenClaw 调试横幅
+  if (
+    text.includes("🦞") ||
+    (text.includes("OpenClaw") && text.includes("Model:")) ||
+    (text.includes("Tokens:") && text.includes("Cache:")) ||
+    (text.includes("Runtime:") && text.includes("Queue:"))
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function MessageBubble({ msg }: { msg: DisplayMessage }) {
   const isUser = msg.role === "user";
   // 始终走 safeContent，避免 lobster 偶尔返非字符串 content 导致崩溃
   const text = safeContent(msg.content);
+
+  // 兜底：上游过滤漏掉的系统/上下文内容，渲染层直接跳过
+  if (isHiddenSystemContent(text)) {
+    return null;
+  }
 
   return (
     <div className={`flex gap-2.5 ${isUser ? "flex-row-reverse" : "flex-row"}`}>

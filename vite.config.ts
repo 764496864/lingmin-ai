@@ -150,7 +150,14 @@ function vitePluginManusDebugCollector(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector()];
+const isDev = process.env.NODE_ENV !== "production";
+const plugins = [
+  react(),
+  tailwindcss(),
+  jsxLocPlugin(),
+  // manus runtime/debug 只在开发环境加载，生产包不塞 366KB 内联脚本
+  ...(isDev ? [vitePluginManusRuntime(), vitePluginManusDebugCollector()] : []),
+];
 
 export default defineConfig({
   plugins,

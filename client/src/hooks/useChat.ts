@@ -115,15 +115,18 @@ function isSessionNotFoundError(msg: string): boolean {
 
 /** 构造发送给后端的消息（带 [user_context] 块，仅已登录时） */
 function buildOutgoingMessage(rawText: string, user: AuthUser | null): string {
-  if (!user) return rawText;
-
   const lines: string[] = ["[user_context]"];
-  lines.push(`昵称: ${user.nickname || user.username}`);
-  if (user.profile?.role) lines.push(`职业: ${user.profile.role}`);
-  if (user.profile?.bio) lines.push(`简介: ${user.profile.bio}`);
-  if (user.globalMemories && user.globalMemories.length > 0) {
-    lines.push("记忆:");
-    user.globalMemories.forEach((m) => lines.push(`- ${m}`));
+  if (user) {
+    lines.push(`昵称: ${user.nickname || user.username}`);
+    if (user.profile?.role) lines.push(`职业: ${user.profile.role}`);
+    if (user.profile?.bio) lines.push(`简介: ${user.profile.bio}`);
+    if (user.globalMemories && user.globalMemories.length > 0) {
+      lines.push("记忆:");
+      user.globalMemories.forEach((m) => lines.push(`- ${m}`));
+    }
+  } else {
+    lines.push("身份: 访客");
+    lines.push("来源: official_website");
   }
   lines.push("[/user_context]");
   lines.push("");
@@ -290,12 +293,7 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
       await openClawClient.connect();
       // chat.inject / chat.history 对新 sessionKey 会返 "session not found"，
       // 这是正常状态（用户还没历史），不是错误。各自单独 catch 静默。
-      try {
-        await openClawClient.injectVisitorContext(agentId, conversationId);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "";
-        if (!isSessionNotFoundError(msg)) throw e;
-      }
+      // visitor context 不再用 chat.inject（需要 admin 权限），改为拼到首条消息里
       let history: ChatMessage[] = [];
       try {
         history = await openClawClient.getHistory(agentId, 50, conversationId);

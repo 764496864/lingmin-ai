@@ -456,7 +456,7 @@ export class OpenClawClient {
         },
         caps: [],
         role: "operator",
-        scopes: ["operator.read"],
+        scopes: ["operator.read", "operator.write"],
         auth: { token: WS_TOKEN },
       },
     };

@@ -157,7 +157,7 @@ class LobsterClient {
 
   private openSocket(): void {
     const url = TOKEN ? `${WS_URL}?token=${encodeURIComponent(TOKEN)}` : WS_URL;
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, { headers: { origin: "http://localhost:3000" } });
     this.ws = ws;
 
     ws.on("open", () => {

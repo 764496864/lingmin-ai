@@ -26,7 +26,7 @@ import WorkflowSection from "@/components/WorkflowSection";
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background text-foreground" style={{ backgroundColor: 'oklch(0.08 0.015 260)', color: 'oklch(0.93 0.005 260)' }}>
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden" style={{ backgroundColor: 'oklch(0.08 0.015 260)', color: 'oklch(0.93 0.005 260)' }}>
       <ParticleBackground />
       <Navbar />
       <main className="relative z-10">

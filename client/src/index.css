@@ -109,6 +109,8 @@
   }
   html {
     background-color: oklch(0.08 0.015 260) !important;
+    overflow-x: hidden;
+    max-width: 100vw;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -236,6 +238,7 @@
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 /* Custom scrollbar for dark theme */

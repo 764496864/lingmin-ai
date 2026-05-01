@@ -12,6 +12,7 @@ loadDotenv({ path: ".env.local" });
 loadDotenv({ path: ".env" });
 
 import express from "express";
+import cors from "cors";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -27,6 +28,7 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
+  app.use(cors({ origin: ["https://lingminai.cn", "https://www.lingminai.cn"], credentials: true }));
 
   // 启动后台 Lobster 连接（非阻塞，失败会自动重连）
   bootLobster();

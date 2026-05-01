@@ -63,20 +63,20 @@ export default function ChatInput({ onSend, onAbort, isGenerating, disabled }: C
       />
       {isGenerating ? (
         <Button
-          size="icon-sm"
+          size="icon"
           variant="ghost"
           onClick={onAbort}
-          className="shrink-0 text-muted-foreground hover:text-foreground"
+          className="shrink-0 min-w-[44px] min-h-[44px] text-muted-foreground hover:text-foreground"
           aria-label="停止生成"
         >
           <Square className="size-3.5 fill-current" />
         </Button>
       ) : (
         <Button
-          size="icon-sm"
+          size="icon"
           onClick={handleSend}
           disabled={disabled}
-          className="shrink-0 bg-[var(--color-star-blue)] hover:bg-[var(--color-star-blue-bright)] text-white rounded-lg"
+          className="shrink-0 min-w-[44px] min-h-[44px] bg-[var(--color-star-blue)] hover:bg-[var(--color-star-blue-bright)] text-white rounded-lg"
           aria-label="发送"
         >
           <ArrowUp className="size-4" />

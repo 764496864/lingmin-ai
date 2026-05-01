@@ -54,7 +54,10 @@ export default function ParticleBackground() {
       const mx = mouseRef.current.x;
       const my = mouseRef.current.y;
 
-      // Draw connections between nearby particles
+      const isMobile = canvas.width < 768;
+
+      // Draw connections between nearby particles (skip on mobile for performance)
+      if (!isMobile) {
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -72,6 +75,7 @@ export default function ParticleBackground() {
           }
         }
       }
+      } // end isMobile check
 
       particles.forEach((p) => {
         // Mouse repulsion

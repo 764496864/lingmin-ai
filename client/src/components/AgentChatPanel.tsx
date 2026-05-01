@@ -303,7 +303,7 @@ export default function AgentChatPanel({
                 {panelHeader}
                 <button
                   onClick={() => onOpenChange(false)}
-                  className="text-muted-foreground hover:text-foreground p-1 shrink-0"
+                  className="text-muted-foreground hover:text-foreground p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center shrink-0"
                   aria-label="关闭"
                 >
                   <X className="size-4" />

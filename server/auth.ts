@@ -11,20 +11,18 @@ import { findByUserId } from "./db";
 // 配置
 // ===========================================================================
 
-const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me-in-prod";
+let _jwtSecret: string | null = null;
+function getJwtSecret(): string {
+  if (!_jwtSecret) {
+    _jwtSecret = process.env.JWT_SECRET ?? "dev-secret-change-me-in-prod";
+    if (_jwtSecret === "dev-secret-change-me-in-prod") {
+      console.warn("[auth] WARNING: using default JWT_SECRET. Set JWT_SECRET in .env.local for production.");
+    }
+  }
+  return _jwtSecret;
+}
 const JWT_EXPIRES_IN: SignOptions["expiresIn"] =
   (process.env.JWT_EXPIRES_IN as SignOptions["expiresIn"] | undefined) ?? "7d";
-
-if (JWT_SECRET === "dev-secret-change-me-in-prod") {
-  if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "[auth] FATAL: JWT_SECRET must be set in production. Set JWT_SECRET in .env.local",
-    );
-  }
-  console.warn(
-    "[auth] WARNING: using default JWT_SECRET. Set JWT_SECRET in .env.local for production.",
-  );
-}
 
 const BCRYPT_ROUNDS = 10;
 
@@ -49,13 +47,13 @@ interface JwtPayload {
 }
 
 export function signToken(userId: string): string {
-  return jwt.sign({ userId } satisfies JwtPayload, JWT_SECRET, {
+  return jwt.sign({ userId } satisfies JwtPayload, getJwtSecret(), {
     expiresIn: JWT_EXPIRES_IN,
   });
 }
 
 export function verifyToken(token: string): string {
-  const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+  const decoded = jwt.verify(token, getJwtSecret()) as JwtPayload;
   return decoded.userId;
 }
 

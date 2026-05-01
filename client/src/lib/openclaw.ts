@@ -545,7 +545,16 @@ export class OpenClawClient {
         }
         const id = crypto.randomUUID();
         const request: OcRequest = { type: "req", id, method, params };
-        this.pending.set(id, { resolve, reject });
+        const timer = setTimeout(() => {
+          if (this.pending.has(id)) {
+            this.pending.delete(id);
+            reject(new Error(`RPC ${method} timeout (20s)`));
+          }
+        }, 20_000);
+        this.pending.set(id, {
+          resolve: (v) => { clearTimeout(timer); resolve(v); },
+          reject: (e) => { clearTimeout(timer); reject(e); },
+        });
         this.ws.send(JSON.stringify(request));
       };
 

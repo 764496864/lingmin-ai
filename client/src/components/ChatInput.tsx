@@ -49,7 +49,7 @@ export default function ChatInput({ onSend, onAbort, isGenerating, disabled }: C
   };
 
   return (
-    <div className="flex items-end gap-2 p-3 border-t border-border/50">
+    <div className="flex items-end gap-2 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] border-t border-border/50">
       <textarea
         ref={textareaRef}
         placeholder="输入消息..."

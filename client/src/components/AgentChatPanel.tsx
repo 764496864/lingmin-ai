@@ -295,8 +295,8 @@ export default function AgentChatPanel({
 
       {/* 移动端 Drawer */}
       {isMobile && (
-        <Drawer open={open} onOpenChange={onOpenChange}>
-          <DrawerContent className="max-h-[90vh] bg-[var(--color-void)]">
+        <Drawer open={open} onOpenChange={onOpenChange} modal={true}>
+          <DrawerContent className="max-h-[95dvh] h-[95dvh] bg-[var(--color-void)] rounded-t-2xl">
             <DrawerHeader className="pb-2 border-b border-border/30 shrink-0">
               <DrawerTitle className="sr-only">{agentName} 聊天</DrawerTitle>
               <div className="flex items-center justify-between gap-2">
@@ -311,7 +311,7 @@ export default function AgentChatPanel({
               </div>
             </DrawerHeader>
             {/* 输入框 + 消息列表占满剩余高度，Drawer 自身有 max-h-[90vh] */}
-            <div className="flex-1 overflow-hidden min-h-0" style={{ height: "calc(90vh - 4rem)" }}>
+            <div className="flex-1 overflow-hidden min-h-0" style={{ height: "calc(95dvh - 4rem)" }}>
               {chatPanel}
             </div>
           </DrawerContent>

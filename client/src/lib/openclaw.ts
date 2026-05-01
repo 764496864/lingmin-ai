@@ -208,18 +208,14 @@ export class OpenClawClient {
 
     return (result.messages ?? []).map((msg) => ({
       ...msg,
-      content:
-  // injectVisitorContext 已移除：chat.inject 需要 operator.admin，
-  // 访客上下文现在通过 buildOutgoingMessage 拼到首条消息里
-
-      message: contextText,
-      label: "visitor_context",
-    });
-
-    sessionStorage.setItem(storageFlag, "1");
+      content: typeof msg.content === 'string' ? msg.content : '',
+    }));
   }
 
-  /** 中断当前 AI 生成（指定 agentId + 可选 conversationId）。 */
+  // injectVisitorContext removed: chat.inject needs operator.admin scope
+  // visitor context now prepended via buildOutgoingMessage
+
+  // visitor context now prepended via buildOutgoingMessage
   async abort(agentId: string, conversationId?: string): Promise<void> {
     await this.rpc("chat.abort", {
       sessionKey: buildSessionKey(agentId, conversationId),

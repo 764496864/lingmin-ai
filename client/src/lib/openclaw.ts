@@ -209,29 +209,9 @@ export class OpenClawClient {
     return (result.messages ?? []).map((msg) => ({
       ...msg,
       content:
-        msg.content === OMITTED_PLACEHOLDER
-          ? "（此消息因过长已省略）"
-          : msg.content,
-    }));
-  }
+  // injectVisitorContext 已移除：chat.inject 需要 operator.admin，
+  // 访客上下文现在通过 buildOutgoingMessage 拼到首条消息里
 
-  /** 注入访客上下文（指定 agentId，每个 sessionKey 只注入一次）。 */
-  async injectVisitorContext(agentId: string, conversationId?: string): Promise<void> {
-    if (MOCK_MODE) return;
-    const sessionKey = buildSessionKey(agentId, conversationId);
-    const storageFlag = `lingmin_ctx_injected:${sessionKey}`;
-    if (sessionStorage.getItem(storageFlag)) return;
-
-    const visitorId = getOrCreateVisitorId();
-    const contextText = [
-      "访客上下文:",
-      `visitor_id: ${visitorId}`,
-      "source: official_website",
-      `entry_agent: ${agentId}`,
-    ].join("\n");
-
-    await this.rpc("chat.inject", {
-      sessionKey,
       message: contextText,
       label: "visitor_context",
     });

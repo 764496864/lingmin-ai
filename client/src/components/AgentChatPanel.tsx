@@ -248,7 +248,7 @@ export default function AgentChatPanel({
         <button
           type="button"
           onClick={handleNewConversation}
-          className="p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
+          className="p-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
           aria-label="新建对话"
           title="新建对话"
         >

@@ -435,6 +435,11 @@ export class OpenClawClient {
   private sendConnectRequest(): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
+    // 关键性能优化：身份从 openclaw-control-ui 改成 lingmin-webchat。
+    // 之前用 control-ui 身份，Gateway 把每个连接当成管理后台，连上立刻
+    // 推 models.list / sessions.list / commands.list / node.list /
+    // device.pair.list 等重查询（每个 30+s，CPU 打满）。
+    // 我们只需要 chat.send + chat 流，给一个最小身份即可。
     const connectFrame: OcRequest = {
       type: "req",
       id: crypto.randomUUID(),
@@ -443,15 +448,15 @@ export class OpenClawClient {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: "openclaw-control-ui",
-          version: "0.1.0",
-          platform: "browser",
-          mode: "ui",
+          id: "lingmin-webchat",
+          version: "1.0.0",
+          platform: "web",
+          mode: "webchat",
           instanceId: INSTANCE_ID,
         },
         caps: [],
-        role: "operator",
-        scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals"],
+        role: "user",
+        scopes: [],
         auth: { token: WS_TOKEN },
       },
     };

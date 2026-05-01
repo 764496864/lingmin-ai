@@ -243,6 +243,10 @@ class LobsterClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
     const id = randomUUID();
+    // 性能优化：身份从 openclaw-control-ui 改成 lingmin-backend。
+    // 后端 lobster-rpc 只读 sessions.list / sessions.usage 用于个人中心统计，
+    // 不需要 operator.admin / write / approvals。最小化 scopes 避免触发
+    // Gateway 的重查询（models.list / commands.list / node.list 等）。
     const frame: OcRequest = {
       type: "req",
       id,
@@ -251,15 +255,15 @@ class LobsterClient {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: "openclaw-control-ui",
-          version: "0.1.0",
+          id: "lingmin-backend",
+          version: "1.0.0",
           platform: "node",
-          mode: "ui",
+          mode: "backend",
           instanceId: this.instanceId,
         },
         caps: [],
         role: "operator",
-        scopes: ["operator.admin", "operator.read", "operator.write", "operator.approvals"],
+        scopes: ["operator.read"],
         auth: { token: getToken() },
       },
     };

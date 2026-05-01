@@ -79,34 +79,43 @@ export default function AgentChatPanel({
     }
   }, [open, initialize]);
 
-  // 已登录时，打开后拉对话列表
+  // 已登录时，打开后延迟拉对话列表
+  // - 延迟 800ms 让聊天 WebSocket 先握手完，避免和 backend lobster-rpc 抢 Gateway 资源
+  // - 加 3s timeout，超时直接放弃显示（不卡 UI）
   useEffect(() => {
     if (!open || !user || !sessionToken) {
       return;
     }
     let cancelled = false;
-    listChatSessions(sessionToken)
-      .then((list) => {
-        if (cancelled) return;
-        if (import.meta.env.DEV) {
-          console.log(`[AgentChatPanel] sessions.list (agentId=${agentId}):`, list);
-        }
-        // 兼容服务端返回 { sessions: [...] } 包装的情况
-        const arr = Array.isArray(list)
-          ? list
-          : (list as { sessions?: unknown })?.sessions ?? [];
-        const safeArr = Array.isArray(arr) ? arr : [];
-        setConversations(safeArr.filter((c) => c.agentId === agentId));
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (import.meta.env.DEV) {
-          console.warn("[AgentChatPanel] sessions.list failed:", e);
-        }
-        // 对话列表 RPC 失败不影响主流程，静默；保持 conversations=[]
-      });
+    const deferTimer = setTimeout(() => {
+      if (cancelled) return;
+      // 3s 超时保护：listChatSessions 偶尔会卡（lobster-rpc 慢路径）
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("sessions.list timeout")), 3000),
+      );
+      Promise.race([listChatSessions(sessionToken), timeoutPromise])
+        .then((list) => {
+          if (cancelled) return;
+          if (import.meta.env.DEV) {
+            console.log(`[AgentChatPanel] sessions.list (agentId=${agentId}):`, list);
+          }
+          const arr = Array.isArray(list)
+            ? list
+            : (list as { sessions?: unknown })?.sessions ?? [];
+          const safeArr = Array.isArray(arr) ? arr : [];
+          setConversations(safeArr.filter((c) => c.agentId === agentId));
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          if (import.meta.env.DEV) {
+            console.warn("[AgentChatPanel] sessions.list failed:", e);
+          }
+          // 对话列表 RPC 失败/超时不影响主流程；保持 conversations=[]
+        });
+    }, 800);
     return () => {
       cancelled = true;
+      clearTimeout(deferTimer);
     };
   }, [open, user, sessionToken, agentId]);
 

@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { AnimatePresence, motion, useScroll, useTransform } from "framer-motion";
-import { ChevronDown, LayoutDashboard, LogOut, Menu, Sparkles, User, X } from "lucide-react";
+import { ChevronDown, LayoutDashboard, LogOut, Menu, User, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 
@@ -164,10 +164,7 @@ export default function Navbar() {
               }
             }}
           >
-            <div className="relative w-9 h-9 flex items-center justify-center">
-              <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-[oklch(0.6_0.2_260)] to-[oklch(0.75_0.18_255)] opacity-20 group-hover:opacity-40 transition-opacity duration-500" />
-              <Sparkles className="w-5 h-5 text-[oklch(0.75_0.18_255)]" />
-            </div>
+            <img src="/logo-amin.jpg" alt="艘敏AI" className="w-9 h-9 rounded-lg object-contain" />
             <span className="font-display font-bold text-lg tracking-tight text-foreground">
               灵敏<span className="text-gradient-blue">AI</span><span className="text-muted-foreground font-normal text-sm ml-1">·艾敏商学</span>
             </span>

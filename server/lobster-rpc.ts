@@ -255,10 +255,10 @@ class LobsterClient {
         minProtocol: 3,
         maxProtocol: 3,
         client: {
-          id: "lingmin-backend",
+          id: "openclaw-control-ui",
           version: "1.0.0",
           platform: "node",
-          mode: "backend",
+          mode: "ui",
           instanceId: this.instanceId,
         },
         caps: [],

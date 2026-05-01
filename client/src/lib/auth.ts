@@ -185,7 +185,7 @@ export function setMemories(
 
 export function fetchStats(
   sessionToken: string,
-): Promise<UserStats & { byAgent?: Record<string, UserStats> }> {
+): Promise<UserStats & { byAgent?: Record<string, UserStats>; degraded?: boolean }> {
   return api("GET", "/user/stats", null, sessionToken);
 }
 

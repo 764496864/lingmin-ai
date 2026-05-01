@@ -11,8 +11,8 @@ import { config as loadDotenv } from "dotenv";
 loadDotenv({ path: ".env.local" });
 loadDotenv({ path: ".env" });
 
-import express from "express";
 import cors from "cors";
+import express from "express";
 import { createServer } from "http";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -27,8 +27,28 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
+
+  // ---- CORS：前端走 Cloudflare 上的 lingminai.cn，后端 api.lingminai.cn 是不同 origin ----
+  // 允许的 origin 列表通过 ALLOWED_ORIGINS env 覆盖（逗号分隔），缺省为线上 + 本地开发
+  const defaultOrigins = [
+    "https://lingminai.cn",
+    "https://www.lingminai.cn",
+    "http://localhost:5173", // vite dev
+    "http://localhost:3000", // 同源 SPA fallback
+  ];
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const origins = allowedOrigins.length > 0 ? allowedOrigins : defaultOrigins;
+  app.use(
+    cors({
+      origin: origins,
+      credentials: true,
+    }),
+  );
+
   app.use(express.json({ limit: "1mb" }));
-  app.use(cors({ origin: ["https://lingminai.cn", "https://www.lingminai.cn"], credentials: true }));
 
   // 启动后台 Lobster 连接（非阻塞，失败会自动重连）
   bootLobster();

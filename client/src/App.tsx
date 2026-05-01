@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Admin from "@/pages/Admin";
+import Chat from "@/pages/Chat";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/NotFound";
 import Profile from "@/pages/Profile";
@@ -21,6 +22,8 @@ function Router() {
       <Route path={"/recover"} component={Recover} />
       <Route path={"/profile"} component={Profile} />
       <Route path={"/admin"} component={Admin} />
+      <Route path={"/chat/:agentId"} component={Chat} />
+      <Route path={"/chat"} component={Chat} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

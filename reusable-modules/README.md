@@ -70,7 +70,7 @@ VITE_APP_SUBTITLE=新公司                  # 页脚 "{APP_NAME} · {APP_SUBTIT
 VITE_STORAGE_PREFIX=newco                 # localStorage key 前缀，避免多项目串数据
 
 # === 后端 ===
-VITE_OPENCLAW_WS_URL=ws://127.0.0.1:18889 # OpenClaw Gateway 地址
+VITE_OPENCLAW_WS_URL=ws://127.0.0.1:18789 # OpenClaw Gateway 地址
 VITE_OPENCLAW_TOKEN=<gateway_token>        # gateway.auth.token
 
 # === 管理员（可选）===

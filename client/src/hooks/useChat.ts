@@ -67,6 +67,23 @@ function isVisitorContextMessage(msg: ChatMessage): boolean {
 }
 
 /**
+ * 判断一条消息是否是 OpenClaw Gateway 注入的运行时调试横幅
+ * （如 "🦞 OpenClaw 2026.4.27 ... Tokens: ... Cache: ... Session: ... Runtime: ..."）。
+ * 这种消息有时会被当作 assistant/system 消息回流，绝对不能展示给终端用户。
+ */
+function isSystemDebugMessage(msg: ChatMessage): boolean {
+  const c = toContentString(msg.content);
+  if (!c) return false;
+  return (
+    c.includes("🦞") ||
+    (c.includes("OpenClaw") && c.includes("Model:")) ||
+    (c.includes("Tokens:") && c.includes("Cache:")) ||
+    (c.includes("Runtime:") && c.includes("Queue:")) ||
+    (c.includes("Session:") && c.includes("agent:") && c.includes("webchat"))
+  );
+}
+
+/**
  * 剥离消息中的 [user_context] / [visitor_context] 块，避免暴露给用户。
  * 闭合标签缺失时也兜底裁掉残块。
  */
@@ -161,6 +178,12 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
         case "delta": {
           const fullText = event.text;
           if (!fullText && !event.delta) break;
+          // 流到一半检测出是 OpenClaw 调试横幅 → 丢弃这次累积，不渲染
+          if (
+            isSystemDebugMessage({ role: "assistant", content: fullText || event.delta })
+          ) {
+            break;
+          }
 
           setMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -180,6 +203,16 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
         }
 
         case "final": {
+          // final 文本是 debug 横幅 → 把这条消息从列表里移除
+          if (
+            event.text &&
+            isSystemDebugMessage({ role: "assistant", content: event.text })
+          ) {
+            setMessages((prev) => prev.filter((m) => m.id !== event.runId));
+            activeRunId.current = null;
+            setIsGenerating(false);
+            break;
+          }
           setMessages((prev) => {
             const idx = prev.findIndex((m) => m.id === event.runId);
             if (idx !== -1) {
@@ -272,7 +305,12 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
         // 新会话没历史，当作空数组处理
       }
       const display: DisplayMessage[] = history
-        .filter((m) => !isVisitorContextMessage(m) && m.role !== "system")
+        .filter(
+          (m) =>
+            m.role !== "system" &&
+            !isVisitorContextMessage(m) &&
+            !isSystemDebugMessage(m),
+        )
         // 对所有消息都跑 stripUserContext —— assistant 消息也可能被服务端
         // 内联了 [user_context]/[visitor_context]（注入残留）。
         // 剥离后内容为空的整条丢弃。

@@ -445,7 +445,7 @@ function MemoryTab() {
 // ===========================================================================
 function StatsTab() {
   const { sessionToken } = useAuth();
-  const [stats, setStats] = useState<(UserStats & { byAgent?: Record<string, UserStats> }) | null>(null);
+  const [stats, setStats] = useState<(UserStats & { byAgent?: Record<string, UserStats>; degraded?: boolean }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
@@ -498,6 +498,27 @@ function StatsTab() {
     return (
       <PanelCard title="使用统计">
         <div className="text-sm text-destructive">{err}</div>
+      </PanelCard>
+    );
+  }
+
+  // 后端降级：龙虾 sessions.usage 拉不到（方法不存在 / 服务挂了）
+  // → 不展示误导性的全 0 数据，改成友好提示
+  const allZero =
+    (stats?.conversationsTotal ?? 0) === 0 &&
+    (stats?.tokensIn ?? 0) === 0 &&
+    (stats?.tokensOut ?? 0) === 0;
+  if (stats?.degraded || (stats && allZero)) {
+    return (
+      <PanelCard
+        title="使用统计"
+        description="使用统计功能开发中，敬请期待"
+      >
+        <div className="text-sm text-muted-foreground/70 leading-relaxed">
+          {stats?.degraded
+            ? "后端统计接口暂时不可用，将在恢复后自动显示。"
+            : "暂无使用记录。开始与智能体对话后，统计数据会出现在这里。"}
+        </div>
       </PanelCard>
     );
   }

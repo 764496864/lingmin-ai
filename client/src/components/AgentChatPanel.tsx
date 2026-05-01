@@ -33,7 +33,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useChat } from "@/hooks/useChat";
 import { useIsMobile } from "@/hooks/useMobile";
 import { type ChatSessionInfo, listChatSessions } from "@/lib/auth";
-import { Bot, Maximize2, Minimize2, Plus, WifiOff, X } from "lucide-react";
+import { Bot, ExternalLink, Maximize2, Minimize2, Plus, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -234,17 +234,28 @@ export default function AgentChatPanel({
         </div>
       </div>
 
-      {/* 桌面端全屏切换 */}
+      {/* 桌面端：新窗口打开 + 全屏切换 */}
       {!isMobile && (
-        <button
-          type="button"
-          onClick={() => setIsFullscreen((v) => !v)}
-          className="mr-8 p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
-          aria-label={isFullscreen ? "缩小" : "全屏"}
-          title={isFullscreen ? "缩小" : "全屏"}
-        >
-          {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
-        </button>
+        <div className="flex items-center gap-1 mr-8">
+          <button
+            type="button"
+            onClick={() => window.open(`/chat/${agentId}`, "_blank", "noopener,noreferrer")}
+            className="p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="新窗口打开"
+            title="新窗口打开"
+          >
+            <ExternalLink className="size-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            className="p-1.5 rounded-lg hover:bg-[oklch(0.15_0.02_260)] text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={isFullscreen ? "缩小" : "全屏"}
+            title={isFullscreen ? "缩小" : "全屏"}
+          >
+            {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -259,7 +270,8 @@ export default function AgentChatPanel({
             className={`${
               isFullscreen
                 ? "w-screen sm:max-w-none"
-                : "w-[400px] sm:max-w-[400px]"
+                // 平板（768-1023）用更宽的 50vw；桌面（1024+）固定 420px
+                : "w-[420px] sm:max-w-[50vw] lg:max-w-[420px]"
             } p-0 gap-0 bg-[var(--color-void)] border-l-border/30 transition-all duration-300`}
           >
             <SheetHeader className="p-4 pb-3 border-b border-border/30">

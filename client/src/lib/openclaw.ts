@@ -10,6 +10,7 @@
  */
 
 import { buildSessionKey, getOrCreateVisitorId } from "./visitor";
+import { ProxyChatClient } from "./chat-proxy";
 
 // ===========================================================================
 // Types
@@ -97,6 +98,12 @@ const OMITTED_PLACEHOLDER = "[chat.history omitted: message too large]";
 const MOCK_MODE = import.meta.env.VITE_OPENCLAW_MOCK === "true";
 
 const INSTANCE_ID = crypto.randomUUID();
+
+const CHAT_MODE = ((import.meta.env.VITE_CHAT_MODE as string | undefined) ?? "direct").toLowerCase();
+
+export function isProxyChatMode(): boolean {
+  return CHAT_MODE === "proxy";
+}
 
 // ===========================================================================
 // OpenClawClient — 多智能体单连接
@@ -208,14 +215,14 @@ export class OpenClawClient {
 
     return (result.messages ?? []).map((msg) => ({
       ...msg,
-      content: typeof msg.content === 'string' ? msg.content : '',
+      content:
+        typeof msg.content === "string" && msg.content.length > 20_000
+          ? OMITTED_PLACEHOLDER
+          : msg.content,
     }));
   }
 
-  // injectVisitorContext removed: chat.inject needs operator.admin scope
-  // visitor context now prepended via buildOutgoingMessage
-
-  // visitor context now prepended via buildOutgoingMessage
+  /** 中断当前 AI 生成（指定 agentId + 可选 conversationId）。 */
   async abort(agentId: string, conversationId?: string): Promise<void> {
     await this.rpc("chat.abort", {
       sessionKey: buildSessionKey(agentId, conversationId),
@@ -572,5 +579,7 @@ export class OpenClawClient {
   }
 }
 
-/** 模块级单例 — 所有 agent 共用同一条 WebSocket 连接 */
-export const openClawClient = new OpenClawClient();
+/** 模块级单例 — direct 默认直连；proxy 需要 VITE_CHAT_MODE=proxy 显式开启 */
+export const openClawClient = isProxyChatMode()
+  ? new ProxyChatClient()
+  : new OpenClawClient();

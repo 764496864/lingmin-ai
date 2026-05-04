@@ -18,6 +18,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 import apiRouter from "./routes";
+import { attachChatProxy } from "./chat-proxy";
 import { bootLobster } from "./lobster-rpc";
 // 触发 db 模块的 schema 初始化
 import "./db";
@@ -69,8 +70,10 @@ async function startServer() {
 
   const port = Number(process.env.PORT ?? 3000);
   const server = createServer(app);
+  attachChatProxy(server, { allowedOrigins: origins });
   server.listen(port, () => {
     console.log(`[server] listening on http://localhost:${port}/`);
+    console.log("[server] chat proxy mounted at /ws/chat");
   });
 
   // ---- 优雅关停：SIGTERM/SIGINT 时停止接受新连接，10s 后强制退出 ----

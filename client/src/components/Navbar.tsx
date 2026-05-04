@@ -164,7 +164,7 @@ export default function Navbar() {
               }
             }}
           >
-            <img src="/logo-amin.jpg" alt="艘敏AI" className="w-9 h-9 rounded-lg object-contain" />
+            <img src="/logo-amin.png" alt="艘敏AI" className="w-9 h-9 rounded-lg object-contain" />
             <span className="font-display font-bold text-lg tracking-tight text-foreground">
               灵敏<span className="text-gradient-blue">AI</span><span className="text-muted-foreground font-normal text-sm ml-1">·艾敏商学</span>
             </span>

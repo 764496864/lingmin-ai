@@ -10,8 +10,8 @@
  *   GET  /api/user/me              当前用户
  *   PUT  /api/user/profile         改昵称/职业/简介/联系方式
  *   PUT  /api/user/memories        覆盖记忆数组
- *   GET  /api/user/stats           使用统计（来自龙虾 sessions.usage）
- *   GET  /api/user/sessions        对话列表（来自龙虾 sessions.list）
+ *   GET  /api/user/stats           使用统计（来自 SQLite chat_sessions）
+ *   GET  /api/user/sessions        对话列表（来自 SQLite chat_sessions）
  *   GET  /api/user/sessions/:sessionKey/history    某条对话历史
  *
  *   GET  /api/admin/users          所有用户（管理员）
@@ -24,7 +24,6 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import * as auth from "./auth";
 import * as db from "./db";
-import * as lobster from "./lobster-rpc";
 
 const router = Router();
 
@@ -219,51 +218,17 @@ router.put("/user/memories", auth.requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
-router.get("/user/stats", auth.requireAuth, async (req, res) => {
+router.get("/user/stats", auth.requireAuth, (req, res) => {
   const { userId } = req as auth.AuthedRequest;
-  try {
-    const usage = await lobster.fetchSessionsUsage(userId);
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[/user/stats] userId=${userId} usage=`, usage);
-    }
-    res.json({
-      conversationsTotal: usage.conversationsTotal ?? 0,
-      tokensIn: usage.tokensIn ?? 0,
-      tokensOut: usage.tokensOut ?? 0,
-      byAgent: usage.byAgent ?? {},
-    });
-  } catch (e) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[/user/stats] lobster.fetchSessionsUsage failed for ${userId}:`, e);
-    }
-    // 龙虾挂了 → 返回兜底数据 + degraded 标记，不让 Profile 页面整页空白
-    res.json({
-      conversationsTotal: 0,
-      tokensIn: 0,
-      tokensOut: 0,
-      byAgent: {},
-      degraded: true,
-    });
-  }
+  res.json(db.getChatStatsForUser(userId));
 });
 
-router.get("/user/sessions", auth.requireAuth, async (req, res) => {
+router.get("/user/sessions", auth.requireAuth, (req, res) => {
   const { userId } = req as auth.AuthedRequest;
-  try {
-    const sessions = await lobster.fetchSessionsList(userId);
-    if (process.env.NODE_ENV !== "production") {
-      console.log(`[/user/sessions] userId=${userId} count=${sessions.length}`);
-    }
-    res.json(sessions);
-  } catch (e) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn(`[/user/sessions] lobster.fetchSessionsList failed for ${userId}:`, e);
-    }
-    res.json({ sessions: [], degraded: true });
-  }
+  res.json(db.listChatSessionsForUser(userId));
 });
 
-router.get("/user/sessions/:sessionKey/history", auth.requireAuth, async (req, res) => {
+router.get("/user/sessions/:sessionKey/history", auth.requireAuth, (req, res) => {
   const { userId } = req as auth.AuthedRequest;
   const sessionKey = req.params.sessionKey;
   // 安全检查：解析 sessionKey 严格匹配 userId 段
@@ -274,54 +239,39 @@ router.get("/user/sessions/:sessionKey/history", auth.requireAuth, async (req, r
     res.status(403).json({ error: "无权访问此对话" });
     return;
   }
-  try {
-    const messages = await lobster.fetchSessionHistory(sessionKey);
-    res.json({ sessionKey, messages });
-  } catch (e) {
-    res.status(502).json({
-      error: `拉取对话历史失败：${e instanceof Error ? e.message : "unknown"}`,
-    });
-  }
+  const messages = db.listChatMessagesForUser(userId, sessionKey).map((msg) => ({
+    role: msg.role,
+    content: msg.content,
+    timestamp: Date.parse(msg.created_at),
+  }));
+  res.json({ sessionKey, messages });
 });
 
 // ===========================================================================
 // 管理员
 // ===========================================================================
 
-router.get("/admin/users", auth.requireAuth, auth.requireAdmin, async (_req, res) => {
+router.get("/admin/users", auth.requireAuth, auth.requireAdmin, (_req, res) => {
   const rows = db.listAllUsers();
 
-  // 并发拉每个用户的 usage（容错：失败的填 0）
-  const summaries = await Promise.all(
-    rows.map(async (row) => {
-      let conversationsTotal = 0;
-      let tokensIn = 0;
-      let tokensOut = 0;
-      try {
-        const u = await lobster.fetchSessionsUsage(row.user_id);
-        conversationsTotal = u.conversationsTotal ?? 0;
-        tokensIn = u.tokensIn ?? 0;
-        tokensOut = u.tokensOut ?? 0;
-      } catch {
-        // 静默：单用户拉取失败不阻塞列表
-      }
-      return {
-        userId: row.user_id,
-        username: row.username,
-        nickname: row.nickname ?? undefined,
-        createdAt: row.created_at,
-        lastLoginAt: row.last_login_at ?? row.created_at,
-        conversationsTotal,
-        tokensIn,
-        tokensOut,
-      };
-    }),
-  );
+  const summaries = rows.map((row) => {
+    const usage = db.getChatStatsForUser(row.user_id);
+    return {
+      userId: row.user_id,
+      username: row.username,
+      nickname: row.nickname ?? undefined,
+      createdAt: row.created_at,
+      lastLoginAt: row.last_login_at ?? row.created_at,
+      conversationsTotal: usage.conversationsTotal,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+    };
+  });
 
   res.json(summaries);
 });
 
-router.get("/admin/users/:userId", auth.requireAuth, auth.requireAdmin, async (req, res) => {
+router.get("/admin/users/:userId", auth.requireAuth, auth.requireAdmin, (req, res) => {
   const targetUserId = req.params.userId;
   const row = db.findByUserId(targetUserId);
   if (!row) {
@@ -330,10 +280,8 @@ router.get("/admin/users/:userId", auth.requireAuth, auth.requireAdmin, async (r
   }
 
   const dto = db.rowToDto(row);
-  let usage: lobster.LobsterUsage = { conversationsTotal: 0, tokensIn: 0, tokensOut: 0 };
-  let sessions: lobster.LobsterSession[] = [];
-  try { usage = await lobster.fetchSessionsUsage(targetUserId); } catch { /* ignore */ }
-  try { sessions = await lobster.fetchSessionsList(targetUserId); } catch { /* ignore */ }
+  const usage = db.getChatStatsForUser(targetUserId);
+  const sessions = db.listChatSessionsForUser(targetUserId);
 
   res.json({
     ...dto,
@@ -344,20 +292,8 @@ router.get("/admin/users/:userId", auth.requireAuth, auth.requireAdmin, async (r
   });
 });
 
-router.get("/admin/dashboard", auth.requireAuth, auth.requireAdmin, async (_req, res) => {
-  // 龙虾挂了 → 全局用量返回 0；本地 SQLite 统计仍有效
-  let today = {
-    conversationsToday: 0,
-    tokensInToday: 0,
-    tokensOutToday: 0,
-    byAgent: [] as Array<{ agentId: string; tokensIn: number; tokensOut: number; conversations: number }>,
-  };
-  let degraded = false;
-  try {
-    today = await lobster.fetchGlobalUsageToday();
-  } catch {
-    degraded = true;
-  }
+router.get("/admin/dashboard", auth.requireAuth, auth.requireAdmin, (_req, res) => {
+  const today = db.getChatDashboardStatsToday();
   res.json({
     activeUsersToday: db.countActiveUsersToday(),
     newUsersToday: db.countNewUsersToday(),
@@ -365,7 +301,6 @@ router.get("/admin/dashboard", auth.requireAuth, auth.requireAdmin, async (_req,
     tokensInToday: today.tokensInToday,
     tokensOutToday: today.tokensOutToday,
     byAgent: today.byAgent,
-    ...(degraded ? { degraded: true } : {}),
   });
 });
 

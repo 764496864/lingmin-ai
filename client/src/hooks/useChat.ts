@@ -7,7 +7,7 @@
  * - 按 sessionKey 订阅事件流，每个 (agentId × conversationId × peerId) 独立
  * - 登录状态变化自动重算 sessionKey（peerId 切换 visitorId ↔ userId）
  * - 切换 sessionKey 时清空消息并重新初始化
- * - 已登录时 sendMessage 在文本前注入 [user_context] 块（不影响 UI 显示原文）
+ * - direct 模式下前端在文本前注入 [user_context] 块；proxy 模式由 Express 注入
  * - 历史消息显示时自动剥离 [user_context] 块
  */
 
@@ -15,6 +15,7 @@ import {
   type ChatMessage,
   type ConnectionState,
   type StreamEvent,
+  isProxyChatMode,
   openClawClient,
 } from "@/lib/openclaw";
 import { buildSessionKey } from "@/lib/visitor";
@@ -113,7 +114,7 @@ function isSessionNotFoundError(msg: string): boolean {
   );
 }
 
-/** 构造发送给后端的消息（带 [user_context] 块，仅已登录时） */
+/** direct 模式构造发送给龙虾的消息（带 [user_context] 块） */
 function buildOutgoingMessage(rawText: string, user: AuthUser | null): string {
   const lines: string[] = ["[user_context]"];
   if (user) {
@@ -329,7 +330,7 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
     }
   }, [agentId, conversationId]);
 
-  /** 发送消息（已登录用户自动注入 [user_context] 块） */
+  /** 发送消息（proxy 模式只发正文；direct 模式保留前端上下文注入） */
   const sendMessage = useCallback(async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -342,8 +343,7 @@ export function useChat({ agentId, conversationId }: UseChatOptions) {
       { id: userMsgId, role: "user", content: trimmed },
     ]);
 
-    // 发给后端的消息（已登录时前置 user_context 块）
-    const outgoing = buildOutgoingMessage(trimmed, user);
+    const outgoing = isProxyChatMode() ? trimmed : buildOutgoingMessage(trimmed, user);
 
     try {
       setIsGenerating(true);

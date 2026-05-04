@@ -18,7 +18,7 @@ import { WebSocket } from "ws";
 // 配置（延迟读取：dotenv 在 server/index.ts 加载，模块级常量会读到空字符串）
 // ===========================================================================
 
-function getWsUrl(): string {
+export function getWsUrl(): string {
   return (
     process.env.OPENCLAW_WS_URL ??
     process.env.VITE_OPENCLAW_WS_URL ??
@@ -26,13 +26,20 @@ function getWsUrl(): string {
   );
 }
 
-function getToken(): string {
+export function getToken(): string {
   return process.env.OPENCLAW_TOKEN ?? process.env.VITE_OPENCLAW_TOKEN ?? "";
 }
 
 /** WebSocket 升级时上报的 Origin。OpenClaw Gateway 校验 allowedOrigins。 */
-function getWsOrigin(): string {
+export function getWsOrigin(): string {
   return process.env.OPENCLAW_WS_ORIGIN ?? "http://localhost:3000";
+}
+
+export function createLobsterSocket(): WebSocket {
+  const wsUrl = getWsUrl();
+  const token = getToken();
+  const url = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
+  return new WebSocket(url, { headers: { origin: getWsOrigin() } });
 }
 
 const RECONNECT_BASE_MS = 1000;
@@ -165,11 +172,8 @@ class LobsterClient {
   // =========================================================================
 
   private openSocket(): void {
-    const wsUrl = getWsUrl();
-    const token = getToken();
-    const url = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
     // OpenClaw Gateway 校验 Origin；server 端 ws 库支持 headers 选项
-    const ws = new WebSocket(url, { headers: { origin: getWsOrigin() } });
+    const ws = createLobsterSocket();
     this.ws = ws;
 
     ws.on("open", () => {
